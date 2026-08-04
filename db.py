@@ -16,9 +16,10 @@ def get_conn() -> sqlite3.Connection:
 
 
 def list_categories() -> list[sqlite3.Row]:
-    """All categories, alphabetical."""
+    """All categories in seed order. Kirim opens on the first one, so id order
+    keeps Tenda in front rather than whatever sorts first alphabetically."""
     with closing(get_conn()) as conn:
-        return conn.execute("SELECT id, nama FROM categories ORDER BY nama").fetchall()
+        return conn.execute("SELECT id, nama FROM categories ORDER BY id").fetchall()
 
 
 def list_vendors(kategori: str | None = None, aktif_only: bool = True) -> list[sqlite3.Row]:
@@ -54,6 +55,25 @@ def get_vendor(vendor_id: int) -> sqlite3.Row | None:
         return conn.execute(
             "SELECT * FROM v_vendor_lengkap WHERE id = ?", (vendor_id,)
         ).fetchone()
+
+
+def list_vendors_by_category(category_id: int, aktif_only: bool = True) -> list[sqlite3.Row]:
+    """Vendors in one category, by id. kategori_ids carries every category the
+    vendor belongs to, so the page can count categories across a selection
+    without another query per vendor."""
+    sql = """SELECT v.id, v.nama_pt, v.pic_nama, v.email, v.aktif,
+                    (SELECT group_concat(vc2.category_id)
+                       FROM vendor_categories vc2
+                      WHERE vc2.vendor_id = v.id) AS kategori_ids
+               FROM vendors v
+               JOIN vendor_categories vc ON vc.vendor_id = v.id
+              WHERE vc.category_id = ?"""
+    if aktif_only:
+        sql += " AND v.aktif = 1"
+    sql += " ORDER BY v.nama_pt"
+
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, (category_id,)).fetchall()
 
 
 def get_vendor_categories(vendor_id: int) -> list[int]:

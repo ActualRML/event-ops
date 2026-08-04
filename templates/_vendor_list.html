@@ -1,0 +1,17 @@
+{# Partial swapped into #daftar-vendor. Checkboxes carry no name on purpose:
+   the hidden container outside this partial is the source of truth, so a
+   swap never destroys or double-submits the selection. #}
+{% for v in vendors %}
+<label>
+  <input type="checkbox"
+         data-vendor-id="{{ v.id }}"
+         data-kategori="{{ v.kategori_ids or '' }}"
+         onchange="toggleVendor(this)"
+         {% if v.id in selected %}checked{% endif %}>
+  <strong>{{ v.nama_pt }}</strong>
+  — {{ v.pic_nama or "—" }}
+  <small>{{ v.email }}</small>
+</label>
+{% else %}
+<p><em>Tidak ada vendor aktif di kategori ini.</em></p>
+{% endfor %}

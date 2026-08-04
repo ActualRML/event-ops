@@ -2,7 +2,7 @@
 
 import re
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -74,7 +74,7 @@ def validasi_vendor(data: dict, category_ids: list[int]) -> dict:
     return errors
 
 
-def parse_kategori_ids(raw: list[str]) -> list[int]:
+def parse_ids(raw: list[str]) -> list[int]:
     """Form values are strings. Non-numeric input is dropped here and caught
     by validation as 'no category selected' rather than a 422."""
     ids = []
@@ -148,7 +148,7 @@ async def vendor_create(
         "no_hp": no_hp, "area": area, "catatan": catatan,
         "aktif": 1 if aktif is not None else 0,
     }
-    ids = parse_kategori_ids(kategori_ids)
+    ids = parse_ids(kategori_ids)
     errors = validasi_vendor(data, ids)
 
     if errors:
@@ -218,7 +218,7 @@ async def vendor_update(
         "no_hp": no_hp, "area": area, "catatan": catatan,
         "aktif": 1 if aktif is not None else 0,
     }
-    ids = parse_kategori_ids(kategori_ids)
+    ids = parse_ids(kategori_ids)
     errors = validasi_vendor(data, ids)
 
     if errors:
@@ -239,6 +239,41 @@ async def vendor_update(
     )
     db.set_vendor_categories(vendor_id, ids)
     return RedirectResponse("/vendors", status_code=303)
+
+
+@app.get("/kirim")
+async def kirim(request: Request):
+    categories = db.list_categories()
+    category_id = categories[0]["id"] if categories else None
+    return templates.TemplateResponse(
+        request,
+        "kirim.html",
+        {
+            "categories": categories,
+            "category_id": category_id,
+            # Selection starts empty; it lives in the page, not the session.
+            "vendors": db.list_vendors_by_category(category_id) if category_id else [],
+            "selected": set(),
+        },
+    )
+
+
+@app.get("/kirim/vendors")
+async def kirim_vendors(
+    request: Request,
+    category_id: int,
+    vendor_ids: list[str] = Query([]),
+):
+    """HTMX partial. vendor_ids arrives from the hidden container so a vendor
+    already picked under another category renders checked here too."""
+    return templates.TemplateResponse(
+        request,
+        "_vendor_list.html",
+        {
+            "vendors": db.list_vendors_by_category(category_id),
+            "selected": set(parse_ids(vendor_ids)),
+        },
+    )
 
 
 @app.post("/vendors/{vendor_id}/aktif")

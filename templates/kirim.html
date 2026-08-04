@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Kirim — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<h2>Kirim RFQ</h2>
+
+{# TODO phase 4: point action at the preview route and drop onsubmit. The
+   guard stops Enter-in-a-text-field from posting to a route that does not
+   exist yet. #}
+<form id="form-kirim" method="post" action="/kirim/preview" onsubmit="return false">
+  <article>
+    <header><strong>Brief acara</strong></header>
+
+    <label>
+      Judul acara
+      <input name="judul_acara" required>
+    </label>
+
+    <div class="grid">
+      <label>
+        Tanggal acara
+        <input type="date" name="tanggal_acara">
+      </label>
+      <label>
+        Deadline penawaran
+        <input type="date" name="deadline">
+      </label>
+    </div>
+
+    <label>
+      Lokasi
+      <input name="lokasi">
+    </label>
+
+    <label>
+      Kebutuhan
+      <textarea name="kebutuhan" rows="3"></textarea>
+    </label>
+
+    <label>
+      Nama pengirim
+      <input name="pengirim_nama">
+    </label>
+  </article>
+
+  <article>
+    <header><strong>Pilih vendor</strong></header>
+
+    <label>
+      Kategori
+      <select id="kategori" name="category_id"
+              hx-get="/kirim/vendors"
+              hx-target="#daftar-vendor"
+              hx-include="#kategori, #terpilih">
+        {% for c in categories %}
+        <option value="{{ c.id }}" {% if c.id == category_id %}selected{% endif %}>{{ c.nama }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div id="daftar-vendor">
+      {% include "_vendor_list.html" %}
+    </div>
+
+    {# Outside #daftar-vendor so an HTMX swap cannot clear it. #}
+    <div id="terpilih" hidden></div>
+
+    <p id="counter" aria-live="polite"></p>
+  </article>
+
+  {# TODO phase 4: wire this to the preview screen. #}
+  <button type="submit" disabled>Lanjut ke preview</button>
+</form>
+
+<script>
+  function kotakTerpilih() {
+    return document.getElementById('terpilih');
+  }
+
+  function toggleVendor(cb) {
+    const box = kotakTerpilih();
+    const id = cb.dataset.vendorId;
+    const ada = box.querySelector('input[value="' + id + '"]');
+
+    if (cb.checked && !ada) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'vendor_ids';
+      input.value = id;
+      // Every category this vendor belongs to, so the counter can union them
+      // even after its checkbox has been swapped out of the DOM.
+      input.dataset.kategori = cb.dataset.kategori || '';
+      box.appendChild(input);
+    } else if (!cb.checked && ada) {
+      ada.remove();
+    }
+
+    hitungUlang();
+  }
+
+  function hitungUlang() {
+    const dipilih = kotakTerpilih().querySelectorAll('input[name="vendor_ids"]');
+    const kategori = new Set();
+
+    dipilih.forEach(function (input) {
+      (input.dataset.kategori || '')
+        .split(',')
+        .filter(Boolean)
+        .forEach(function (k) { kategori.add(k); });
+    });
+
+    document.getElementById('counter').textContent =
+      dipilih.length + ' vendor dipilih dari ' + kategori.size + ' kategori';
+  }
+
+  hitungUlang();
+</script>
+{% endblock %}
