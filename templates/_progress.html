@@ -7,12 +7,34 @@
      hx-swap="outerHTML"
      {% endif %}>
 
+  <div class="metrik">
+    <div class="metrik-kartu">
+      <div class="metrik-angka">{{ p.total }}</div>
+      <div class="metrik-label">Total</div>
+    </div>
+    <div class="metrik-kartu metrik-terkirim">
+      <div class="metrik-angka">{{ p.sent }}</div>
+      <div class="metrik-label">Terkirim</div>
+    </div>
+    <div class="metrik-kartu metrik-gagal">
+      <div class="metrik-angka">{{ p.failed }}</div>
+      <div class="metrik-label">Gagal</div>
+    </div>
+  </div>
+
+  {% if p.selesai %}
+  <p>
+    <strong>Batch selesai.</strong>
+    {{ p.sent }} dari {{ p.total }} email terkirim{% if p.failed %}, {{ p.failed }} gagal{% endif %}.
+    <a href="/tracker">Lihat semua request</a>
+  </p>
+  {% else %}
   <p>
     <strong>{{ p.sent }} dari {{ p.total }} terkirim</strong>
     {% if p.failed %} · <span class="badge badge-gagal">{{ p.failed }} gagal</span>{% endif %}
     {% if p.draft %} · {{ p.draft }} menunggu{% endif %}
-    {% if p.selesai %} · selesai{% endif %}
   </p>
+  {% endif %}
 
   <progress value="{{ p.sent + p.failed }}" max="{{ p.total or 1 }}"></progress>
 
@@ -30,18 +52,32 @@
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.nama_pt }}</td>
+        <td><strong>{{ r.nama_pt }}</strong></td>
         <td>{{ r.kategori or "—" }}</td>
-        <td>{{ r.email_tujuan }}</td>
+        <td class="redup">{{ r.email_tujuan }}</td>
         <td>
           <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
         </td>
-        <td>{{ r.sent_at or "—" }}</td>
-        <td><small>{{ r.error_msg or "" }}</small></td>
+        <td class="redup">{{ r.sent_at or "—" }}</td>
+        {# One line in the cell, whole SMTP error in the tooltip. #}
+        <td class="error-sel">
+          {% if r.error_msg %}
+          <span title="{{ r.error_msg }}">{{ r.error_msg.splitlines()[0] }}</span>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6"><em>Belum ada baris outbox.</em></td></tr>
+      <tr>
+        <td colspan="6" class="kosong">
+          Belum ada baris outbox untuk request ini.
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
+
+  {# Only once the batch is done; mid-batch a zero here would read as a promise. #}
+  {% if p.selesai and not p.failed %}
+  <p class="redup">Tidak ada kegagalan di batch ini — semua vendor terkirim tanpa error.</p>
+  {% endif %}
 </div>

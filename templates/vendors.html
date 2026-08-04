@@ -4,7 +4,10 @@
 {% block content %}
 <hgroup>
   <h2>Vendor</h2>
-  <p>{{ vendors|length }} vendor{% if kategori %} di kategori {{ kategori }}{% endif %}</p>
+  <p>
+    {{ vendors|length }} vendor, {{ categories|length }} kategori{% if kategori %}
+    · disaring ke kategori {{ kategori }}{% endif %}
+  </p>
 </hgroup>
 
 <div class="grid">
@@ -16,7 +19,7 @@
         <option value="{{ c.nama }}" {% if c.nama == kategori %}selected{% endif %}>{{ c.nama }}</option>
         {% endfor %}
       </select>
-      <button type="submit">Filter</button>
+      <button type="submit" class="secondary">Filter</button>
     </fieldset>
   </form>
   <div>
@@ -38,9 +41,9 @@
   <tbody>
     {% for v in vendors %}
     <tr {% if not v.aktif %}class="nonaktif"{% endif %}>
-      <td>{{ v.nama_pt }}</td>
-      <td>{{ v.pic_nama or "—" }}</td>
-      <td>{{ v.email }}</td>
+      <td><strong>{{ v.nama_pt }}</strong></td>
+      <td class="redup">{{ v.pic_nama or "—" }}</td>
+      <td class="redup">{{ v.email }}</td>
       <td>{{ v.kategori or "—" }}</td>
       <td>
         <span class="badge {{ 'badge-aktif' if v.aktif else 'badge-nonaktif' }}">
@@ -61,7 +64,15 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="6"><em>Belum ada vendor.</em></td>
+      <td colspan="6" class="kosong">
+        {% if kategori %}
+        Belum ada vendor di kategori {{ kategori }}. Pilih “Semua kategori” untuk
+        melihat seluruh daftar, atau tambahkan vendor baru ke kategori ini.
+        {% else %}
+        Belum ada vendor sama sekali. Mulai dengan “Tambah Vendor” — RFQ baru bisa
+        dikirim setelah ada minimal satu vendor aktif.
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>

@@ -2,7 +2,10 @@
 {% block title %}Kirim — Vendor RFQ Blast{% endblock %}
 
 {% block content %}
-<h2>Kirim RFQ</h2>
+<hgroup>
+  <h2>Kirim RFQ</h2>
+  <p>Langkah 1 dari 2 · isi brief acara, lalu pilih vendor dari {{ categories|length }} kategori.</p>
+</hgroup>
 
 {% if errors %}
 <article>
@@ -12,6 +15,11 @@
 {% endif %}
 
 <form id="form-kirim" method="post" action="/kirim/preview">
+  {# Template edits made on the preview screen, carried back through Kembali so
+     the next preview starts from them. Empty means the file defaults apply. #}
+  <input type="hidden" name="subject_template" value="{{ templat.subject }}">
+  <input type="hidden" name="body_template" value="{{ templat.body }}">
+
   <article>
     <header><strong>Brief acara</strong></header>
 

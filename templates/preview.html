@@ -2,7 +2,10 @@
 {% block title %}Preview — Vendor RFQ Blast{% endblock %}
 
 {% block content %}
-<h2>Preview RFQ</h2>
+<hgroup>
+  <h2>Preview RFQ</h2>
+  <p>Langkah 2 dari 2 · {{ vendors|length }} email siap dikirim, satu per vendor.</p>
+</hgroup>
 
 {% if render_error %}
 <article>
@@ -30,8 +33,8 @@
     <tbody>
       {% for v in vendors %}
       <tr>
-        <td>{{ v.nama_pt }}</td>
-        <td>{{ v.email }}</td>
+        <td><strong>{{ v.nama_pt }}</strong></td>
+        <td class="redup">{{ v.email }}</td>
         <td>{% if loop.first %}<span class="badge badge-aktif">contoh di atas</span>{% endif %}</td>
       </tr>
       {% endfor %}
@@ -72,8 +75,11 @@
     </small>
   </article>
 
+  {# Kirim is the primary action here; the other two are styled down so it
+     dominates. Order is unchanged — the first submit is still the preview
+     route, which is what Enter in a field triggers. #}
   <fieldset role="group">
-    <button type="submit">Perbarui preview</button>
+    <button type="submit" class="secondary outline">Perbarui preview</button>
     {# Layer 1 of the double-send guard: the button disables itself the moment
        the POST is on its way. Disabling happens after submit so the request
        still carries formaction. #}
@@ -81,7 +87,7 @@
             onclick="kunciKirim(this)">Kirim sekarang</button>
     {# Posts the hidden brief and vendor ids back so nothing is lost. A plain
        link to /kirim would drop the whole selection. #}
-    <button type="submit" formaction="/kirim/kembali" class="secondary">Kembali</button>
+    <button type="submit" formaction="/kirim/kembali" class="secondary outline">Kembali</button>
   </fieldset>
 </form>
 

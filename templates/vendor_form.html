@@ -2,7 +2,10 @@
 {% block title %}{{ judul }} — Vendor RFQ Blast{% endblock %}
 
 {% block content %}
-<h2>{{ judul }}</h2>
+<hgroup>
+  <h2>{{ judul }}</h2>
+  <p>Satu vendor bisa terdaftar di beberapa kategori sekaligus.</p>
+</hgroup>
 
 {% if errors %}
 <article>

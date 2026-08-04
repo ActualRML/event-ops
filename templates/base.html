@@ -5,8 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Vendor RFQ Blast{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
   <style>
+    /* Inter overrides Pico's font stack; every other Pico default stands. */
+    :root { --pico-font-family: "Inter", var(--pico-font-family-sans-serif); }
+
     .badge { padding: .15rem .55rem; border-radius: 1rem; font-size: .75rem;
              white-space: nowrap; color: #fff; }
     .badge-aktif, .badge-sent { background: #2e7d32; }
@@ -14,6 +21,42 @@
     .badge-gagal, .badge-failed { background: #b3261e; }
     .badge-replied { background: #1565c0; }
     tr.nonaktif td { opacity: .45; }
+
+    /* Metric cards — tracker detail. */
+    .metrik { display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);
+              margin-bottom: 1.5rem; }
+    .metrik-kartu { border: 1px solid var(--pico-muted-border-color);
+                    border-radius: var(--pico-border-radius);
+                    padding: .9rem 1rem; }
+    .metrik-angka { font-size: 1.9rem; font-weight: 600; line-height: 1.1; }
+    .metrik-label { font-size: .75rem; text-transform: uppercase;
+                    letter-spacing: .04em; color: var(--pico-muted-color); }
+    .metrik-gagal .metrik-angka { color: #b3261e; }
+    .metrik-terkirim .metrik-angka { color: #2e7d32; }
+    @media (max-width: 720px) { .metrik { grid-template-columns: repeat(2, 1fr); } }
+
+    /* Tables: roomier rows, numbers right-aligned, supporting text muted. */
+    table td, table th { padding: .75rem .75rem; vertical-align: middle; }
+    table th { font-size: .8rem; text-transform: uppercase;
+               letter-spacing: .03em; color: var(--pico-muted-color); }
+    .angka { text-align: right; font-variant-numeric: tabular-nums; }
+    .redup { color: var(--pico-muted-color); font-size: .85rem; }
+    .kosong { color: var(--pico-muted-color); font-style: italic;
+              padding-block: 1.5rem; }
+
+    /* A multi-line SMTP error would blow the row height apart; the full text
+       stays in the title attribute. */
+    .error-sel { max-width: 22rem; }
+    .error-sel span { display: block; overflow: hidden; white-space: nowrap;
+                      text-overflow: ellipsis; color: #b3261e; font-size: .8rem; }
+
+    nav a[aria-current="page"] { font-weight: 600; color: var(--pico-primary);
+                                 text-decoration: underline;
+                                 text-underline-offset: .35rem; }
+
+    button:disabled, [role="button"]:disabled, button[disabled] {
+      opacity: .45; cursor: not-allowed; filter: grayscale(35%);
+    }
   </style>
 </head>
 <body>
@@ -21,10 +64,13 @@
     <ul>
       <li><strong>Vendor RFQ Blast</strong></li>
     </ul>
+    {# Active page from the request path — no extra context key to thread
+       through every handler. #}
+    {% set path = request.url.path if request else "" %}
     <ul>
-      <li><a href="/vendors">Vendor</a></li>
-      <li><a href="/kirim">Kirim</a></li>
-      <li><a href="/tracker">Tracker</a></li>
+      <li><a href="/vendors" {% if path.startswith("/vendors") %}aria-current="page"{% endif %}>Vendor</a></li>
+      <li><a href="/kirim" {% if path.startswith("/kirim") %}aria-current="page"{% endif %}>Kirim</a></li>
+      <li><a href="/tracker" {% if path.startswith("/tracker") %}aria-current="page"{% endif %}>Tracker</a></li>
     </ul>
   </nav>
 

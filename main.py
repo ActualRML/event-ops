@@ -20,6 +20,8 @@ app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
+# Presentation only: ISO dates read as "18 September 2026" in the templates.
+templates.env.filters["tanggal"] = renderer.format_tanggal
 
 NO_HP_ALLOWED = re.compile(r"^[0-9 +\-]+$")
 
@@ -294,9 +296,12 @@ def validasi_brief(brief: dict, vendor_ids: list[int]) -> dict:
 
 
 def kirim_context(request: Request, brief: dict, selected_ids: list[int],
-                  category_id: int | None, errors: dict) -> dict:
+                  category_id: int | None, errors: dict,
+                  templat: dict | None = None) -> dict:
     """Context for kirim.html. Rebuilds the hidden container from selected_ids
-    so a validation bounce never costs the user their selection."""
+    so a validation bounce never costs the user their selection. templat holds
+    the edited email templates when there are any; empty strings mean the file
+    defaults still apply."""
     categories = db.list_categories()
     if category_id is None and categories:
         category_id = categories[0]["id"]
@@ -315,6 +320,7 @@ def kirim_context(request: Request, brief: dict, selected_ids: list[int],
         "terpilih": terpilih,
         "brief": brief,
         "errors": errors,
+        "templat": templat or {"subject": "", "body": ""},
     }
 
 
@@ -337,9 +343,12 @@ async def kirim_kembali(
     pengirim_nama: str = Form(""),
     category_id: str = Form(""),
     vendor_ids: list[str] = Form([]),
+    subject_template: str = Form(""),
+    body_template: str = Form(""),
 ):
     """Back from preview. Same rebuild path the validation bounce uses, minus
-    the errors, so the brief and the vendor selection both come back."""
+    the errors, so the brief and the vendor selection both come back. The edited
+    templates ride along too, so a detour to add a vendor does not undo them."""
     brief = {
         "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
         "lokasi": lokasi, "kebutuhan": kebutuhan,
@@ -351,7 +360,10 @@ async def kirim_kembali(
     return templates.TemplateResponse(
         request,
         "kirim.html",
-        kirim_context(request, brief, ids, kategori[0] if kategori else None, {}),
+        kirim_context(
+            request, brief, ids, kategori[0] if kategori else None, {},
+            {"subject": subject_template, "body": body_template},
+        ),
     )
 
 
@@ -388,7 +400,10 @@ async def kirim_preview(
         return templates.TemplateResponse(
             request,
             "kirim.html",
-            kirim_context(request, brief, ids, kategori_aktif, errors),
+            kirim_context(
+                request, brief, ids, kategori_aktif, errors,
+                {"subject": subject_template, "body": body_template},
+            ),
             status_code=422,
         )
 
@@ -535,7 +550,10 @@ async def kirim_send(
     if errors:
         return templates.TemplateResponse(
             request, "kirim.html",
-            kirim_context(request, brief, ids, None, errors),
+            kirim_context(
+                request, brief, ids, None, errors,
+                {"subject": subject_template, "body": body_template},
+            ),
             status_code=422,
         )
 

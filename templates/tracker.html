@@ -4,36 +4,43 @@
 {% block content %}
 <hgroup>
   <h2>Tracker</h2>
-  <p>{{ requests|length }} request</p>
+  <p>{{ requests|length }} request pengiriman, terbaru di atas.</p>
 </hgroup>
 
+{# Newest first comes from db.list_requests() (ORDER BY r.id DESC); nothing is
+   re-sorted here. #}
 <table>
   <thead>
     <tr>
       <th>#</th>
       <th>Judul acara</th>
+      <th>Tanggal acara</th>
       <th>Dibuat</th>
-      <th>Total</th>
-      <th>Terkirim</th>
-      <th>Gagal</th>
-      <th>Menunggu</th>
+      <th>Pengiriman</th>
       <th></th>
     </tr>
   </thead>
   <tbody>
     {% for r in requests %}
     <tr>
-      <td>{{ r.id }}</td>
-      <td>{{ r.judul_acara }}</td>
-      <td>{{ r.created_at }}</td>
-      <td>{{ r.total }}</td>
-      <td>{{ r.sent }}</td>
-      <td>{% if r.failed %}<span class="badge badge-gagal">{{ r.failed }}</span>{% else %}0{% endif %}</td>
-      <td>{{ r.draft }}</td>
+      <td class="angka">{{ r.id }}</td>
+      <td><strong>{{ r.judul_acara }}</strong></td>
+      <td>{{ r.tanggal_acara | tanggal or "—" }}</td>
+      <td class="redup">{{ r.created_at }}</td>
+      <td>
+        {{ r.sent }}/{{ r.total }} terkirim
+        {% if r.failed %}<span class="badge badge-gagal">{{ r.failed }} gagal</span>{% endif %}
+        {% if r.draft %}<span class="badge badge-draft">{{ r.draft }} menunggu</span>{% endif %}
+      </td>
       <td><a href="/tracker/{{ r.id }}" role="button" class="secondary outline">Detail</a></td>
     </tr>
     {% else %}
-    <tr><td colspan="8"><em>Belum ada request.</em></td></tr>
+    <tr>
+      <td colspan="6" class="kosong">
+        Belum ada request yang pernah dikirim. Buat yang pertama lewat halaman
+        Kirim — setiap batch akan muncul di sini beserta status per vendor.
+      </td>
+    </tr>
     {% endfor %}
   </tbody>
 </table>

@@ -4,7 +4,10 @@
 {% block content %}
 <hgroup>
   <h2>{{ permintaan.judul_acara }}</h2>
-  <p>Request #{{ request_id }} · dibuat {{ permintaan.created_at }}</p>
+  <p>
+    Request #{{ request_id }} · {{ p.total }} vendor · acara
+    {{ permintaan.tanggal_acara | tanggal or "tanpa tanggal" }} · dibuat {{ permintaan.created_at }}
+  </p>
 </hgroup>
 
 <article>
@@ -17,6 +20,6 @@
       Retry yang gagal
     </button>
   </form>
-  <a href="/tracker" role="button" class="secondary">Semua request</a>
+  <a href="/tracker" role="button" class="secondary outline">Semua request</a>
 </fieldset>
 {% endblock %}
