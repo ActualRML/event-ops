@@ -326,6 +326,35 @@ async def kirim(request: Request):
     )
 
 
+@app.post("/kirim/kembali")
+async def kirim_kembali(
+    request: Request,
+    judul_acara: str = Form(""),
+    tanggal_acara: str = Form(""),
+    lokasi: str = Form(""),
+    kebutuhan: str = Form(""),
+    deadline: str = Form(""),
+    pengirim_nama: str = Form(""),
+    category_id: str = Form(""),
+    vendor_ids: list[str] = Form([]),
+):
+    """Back from preview. Same rebuild path the validation bounce uses, minus
+    the errors, so the brief and the vendor selection both come back."""
+    brief = {
+        "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
+        "lokasi": lokasi, "kebutuhan": kebutuhan,
+        "deadline": deadline, "pengirim_nama": pengirim_nama,
+    }
+    ids = list(dict.fromkeys(parse_ids(vendor_ids)))
+    kategori = parse_ids([category_id])
+
+    return templates.TemplateResponse(
+        request,
+        "kirim.html",
+        kirim_context(request, brief, ids, kategori[0] if kategori else None, {}),
+    )
+
+
 @app.post("/kirim/preview")
 async def kirim_preview(
     request: Request,

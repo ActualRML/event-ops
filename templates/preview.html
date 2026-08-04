@@ -79,7 +79,9 @@
        still carries formaction. #}
     <button type="submit" id="tombol-kirim" formaction="/kirim/send"
             onclick="kunciKirim(this)">Kirim sekarang</button>
-    <a href="/kirim" role="button" class="secondary">Kembali</a>
+    {# Posts the hidden brief and vendor ids back so nothing is lost. A plain
+       link to /kirim would drop the whole selection. #}
+    <button type="submit" formaction="/kirim/kembali" class="secondary">Kembali</button>
   </fieldset>
 </form>
 

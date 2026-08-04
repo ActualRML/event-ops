@@ -80,7 +80,7 @@ VALUES (
     'Kapasitas 800 tamu, acara outdoor mulai pukul 16.00 sampai 22.00 WIB. Loading in H-1 mulai pukul 08.00.',
     '2026-08-12',
     'Ronald Lilipaly',
-    'Permintaan Penawaran {{ kategori }} - {{ judul_acara }} ({{ nama_pt }})',
+    'Permintaan Penawaran {{ kategori }} - {{ nama_pt }} ({{ judul_acara }})',
 'Kepada Yth.
 Bapak/Ibu {{ pic_nama }}
 {{ nama_pt }}

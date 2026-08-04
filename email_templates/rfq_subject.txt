@@ -1,1 +1,1 @@
-Permintaan Penawaran {{ kategori }} - {{ judul_acara }} ({{ nama_pt }})
+Permintaan Penawaran {{ kategori }} - {{ nama_pt }} ({{ judul_acara }})
