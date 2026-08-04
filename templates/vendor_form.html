@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ judul }} — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<h2>{{ judul }}</h2>
+
+{% if errors %}
+<article>
+  <strong>Data belum bisa disimpan.</strong> Periksa kembali isian yang ditandai di bawah.
+</article>
+{% endif %}
+
+<form method="post" action="{{ action }}">
+  <label>
+    Nama PT
+    <input name="nama_pt" value="{{ v.nama_pt }}"
+           {% if errors.nama_pt %}aria-invalid="true"{% endif %}>
+    {% if errors.nama_pt %}<small>{{ errors.nama_pt }}</small>{% endif %}
+  </label>
+
+  <label>
+    Nama PIC
+    <input name="pic_nama" value="{{ v.pic_nama }}">
+  </label>
+
+  <label>
+    Email
+    <input type="email" name="email" value="{{ v.email }}"
+           {% if errors.email %}aria-invalid="true"{% endif %}>
+    {% if errors.email %}<small>{{ errors.email }}</small>{% endif %}
+  </label>
+
+  <label>
+    No HP
+    <input name="no_hp" value="{{ v.no_hp }}"
+           {% if errors.no_hp %}aria-invalid="true"{% endif %}>
+    {% if errors.no_hp %}<small>{{ errors.no_hp }}</small>{% endif %}
+  </label>
+
+  <label>
+    Area
+    <input name="area" value="{{ v.area }}">
+  </label>
+
+  <label>
+    Catatan
+    <textarea name="catatan" rows="3">{{ v.catatan }}</textarea>
+  </label>
+
+  <fieldset>
+    <legend>Kategori</legend>
+    {% for c in categories %}
+    <label>
+      <input type="checkbox" name="kategori_ids" value="{{ c.id }}"
+             {% if c.id in selected %}checked{% endif %}>
+      {{ c.nama }}
+    </label>
+    {% endfor %}
+    {% if errors.kategori %}<small>{{ errors.kategori }}</small>{% endif %}
+  </fieldset>
+
+  <label>
+    <input type="checkbox" name="aktif" role="switch" {% if v.aktif %}checked{% endif %}>
+    Aktif
+  </label>
+
+  <fieldset role="group">
+    <button type="submit">Simpan</button>
+    <a href="/vendors" role="button" class="secondary">Batal</a>
+  </fieldset>
+</form>
+{% endblock %}

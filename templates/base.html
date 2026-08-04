@@ -6,6 +6,13 @@
   <title>{% block title %}Vendor RFQ Blast{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <style>
+    .badge { padding: .15rem .55rem; border-radius: 1rem; font-size: .75rem;
+             white-space: nowrap; color: #fff; }
+    .badge-aktif { background: #2e7d32; }
+    .badge-nonaktif { background: #78848f; }
+    tr.nonaktif td { opacity: .45; }
+  </style>
 </head>
 <body>
   <nav class="container">
@@ -13,7 +20,7 @@
       <li><strong>Vendor RFQ Blast</strong></li>
     </ul>
     <ul>
-      <li><a href="#">Vendor</a></li>
+      <li><a href="/vendors">Vendor</a></li>
       <li><a href="#">Kirim</a></li>
       <li><a href="#">Tracker</a></li>
     </ul>
