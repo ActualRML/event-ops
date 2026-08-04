@@ -1,0 +1,33 @@
+Kepada Yth.
+Bapak/Ibu {{ pic_nama }}
+{{ nama_pt }}
+di tempat
+
+Dengan hormat,
+
+Sehubungan dengan rencana penyelenggaraan acara di bawah ini, kami bermaksud
+meminta penawaran harga untuk kebutuhan {{ kategori }}.
+
+Nama acara    : {{ judul_acara }}
+Tanggal       : {{ tanggal_acara }}
+Lokasi        : {{ lokasi }}
+Kebutuhan     : {{ kebutuhan }}
+
+Mohon penawaran yang Bapak/Ibu sampaikan mencantumkan hal-hal berikut:
+
+1. Harga satuan dan harga total untuk setiap item yang ditawarkan.
+2. Keterangan apakah harga sudah termasuk PPN atau belum.
+3. Keterangan apakah biaya pengiriman dan instalasi di lokasi sudah termasuk
+   dalam harga, atau ditagihkan terpisah.
+4. Masa berlaku penawaran.
+
+Kami mohon penawaran dapat kami terima paling lambat {{ deadline }}. Apabila
+ada detail teknis yang perlu didiskusikan lebih dahulu, silakan membalas email
+ini atau menghubungi kami langsung.
+
+Atas perhatian dan kerja sama Bapak/Ibu, kami ucapkan terima kasih.
+
+Hormat kami,
+
+{{ pengirim_nama }}
+Divisi Procurement

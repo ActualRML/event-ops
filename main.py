@@ -1,13 +1,20 @@
 """Vendor RFQ Blast — app entrypoint."""
 
+import asyncio
 import re
+import sqlite3
+from contextlib import closing
+from datetime import date
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import config
 import db
+import mailer
+import renderer
 
 app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -241,20 +248,154 @@ async def vendor_update(
     return RedirectResponse("/vendors", status_code=303)
 
 
+BRIEF_KOSONG = {
+    "judul_acara": "", "tanggal_acara": "", "lokasi": "",
+    "kebutuhan": "", "deadline": "", "pengirim_nama": "",
+}
+
+
+def parse_tanggal(teks: str):
+    """ISO date string to date, or None if blank/unparseable."""
+    teks = (teks or "").strip()
+    if not teks:
+        return None
+    try:
+        return date.fromisoformat(teks)
+    except ValueError:
+        return None
+
+
+def validasi_brief(brief: dict, vendor_ids: list[int]) -> dict:
+    """Runs before rendering. Returns {field: message}."""
+    errors = {}
+
+    if not brief["judul_acara"].strip():
+        errors["judul_acara"] = "Judul acara wajib diisi."
+    if not brief["kebutuhan"].strip():
+        errors["kebutuhan"] = "Kebutuhan wajib diisi."
+    if not vendor_ids:
+        errors["vendor"] = "Pilih minimal satu vendor."
+
+    tanggal_acara = parse_tanggal(brief["tanggal_acara"])
+    deadline = parse_tanggal(brief["deadline"])
+
+    if brief["tanggal_acara"].strip() and tanggal_acara is None:
+        errors["tanggal_acara"] = "Format tanggal tidak valid."
+    if brief["deadline"].strip() and deadline is None:
+        errors["deadline"] = "Format tanggal tidak valid."
+
+    if deadline is not None:
+        if deadline < date.today():
+            errors["deadline"] = "Deadline tidak boleh sebelum hari ini."
+        elif tanggal_acara is not None and deadline > tanggal_acara:
+            errors["deadline"] = "Deadline harus sebelum atau sama dengan tanggal acara."
+
+    return errors
+
+
+def kirim_context(request: Request, brief: dict, selected_ids: list[int],
+                  category_id: int | None, errors: dict) -> dict:
+    """Context for kirim.html. Rebuilds the hidden container from selected_ids
+    so a validation bounce never costs the user their selection."""
+    categories = db.list_categories()
+    if category_id is None and categories:
+        category_id = categories[0]["id"]
+
+    terpilih = [
+        {"id": vid, "kategori": ",".join(str(c) for c in db.get_vendor_categories(vid))}
+        for vid in selected_ids
+    ]
+
+    return {
+        "request": request,
+        "categories": categories,
+        "category_id": category_id,
+        "vendors": db.list_vendors_by_category(category_id) if category_id else [],
+        "selected": set(selected_ids),
+        "terpilih": terpilih,
+        "brief": brief,
+        "errors": errors,
+    }
+
+
 @app.get("/kirim")
 async def kirim(request: Request):
-    categories = db.list_categories()
-    category_id = categories[0]["id"] if categories else None
+    # Selection starts empty; it lives in the page, not the session.
+    return templates.TemplateResponse(
+        request, "kirim.html", kirim_context(request, dict(BRIEF_KOSONG), [], None, {})
+    )
+
+
+@app.post("/kirim/preview")
+async def kirim_preview(
+    request: Request,
+    judul_acara: str = Form(""),
+    tanggal_acara: str = Form(""),
+    lokasi: str = Form(""),
+    kebutuhan: str = Form(""),
+    deadline: str = Form(""),
+    pengirim_nama: str = Form(""),
+    category_id: str = Form(""),
+    vendor_ids: list[str] = Form([]),
+    subject_template: str = Form(""),
+    body_template: str = Form(""),
+):
+    brief = {
+        "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
+        "lokasi": lokasi, "kebutuhan": kebutuhan,
+        "deadline": deadline, "pengirim_nama": pengirim_nama,
+    }
+    # dict.fromkeys dedupes while keeping click order; the first id drives the example.
+    ids = list(dict.fromkeys(parse_ids(vendor_ids)))
+    kategori_aktif = parse_ids([category_id])
+    kategori_aktif = kategori_aktif[0] if kategori_aktif else None
+
+    vendors = [v for v in (db.get_vendor(i) for i in ids) if v is not None]
+    if not vendors:
+        ids = []
+
+    errors = validasi_brief(brief, ids)
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "kirim.html",
+            kirim_context(request, brief, ids, kategori_aktif, errors),
+            status_code=422,
+        )
+
+    subject_template = subject_template or renderer.default_subject()
+    body_template = body_template or renderer.default_body()
+
+    contoh = vendors[0]
+    render_error = None
+    subject, body = "", ""
+    try:
+        subject, body = renderer.render_email(
+            subject_template,
+            body_template,
+            brief,
+            {"nama_pt": contoh["nama_pt"], "pic_nama": contoh["pic_nama"],
+             "kategori": contoh["kategori"]},
+        )
+    except Exception as e:
+        render_error = f"{type(e).__name__}: {e}"
+
     return templates.TemplateResponse(
         request,
-        "kirim.html",
+        "preview.html",
         {
-            "categories": categories,
-            "category_id": category_id,
-            # Selection starts empty; it lives in the page, not the session.
-            "vendors": db.list_vendors_by_category(category_id) if category_id else [],
-            "selected": set(),
+            "brief": brief,
+            "vendors": vendors,
+            "vendor_ids": [v["id"] for v in vendors],
+            "category_id": kategori_aktif or "",
+            "subject_template": subject_template,
+            "body_template": body_template,
+            "subject": subject,
+            "body": body,
+            "contoh": contoh,
+            "render_error": render_error,
         },
+        status_code=422 if render_error else 200,
     )
 
 
@@ -274,6 +415,182 @@ async def kirim_vendors(
             "selected": set(parse_ids(vendor_ids)),
         },
     )
+
+
+def brief_dari_request(row) -> dict:
+    return {
+        "judul_acara": row["judul_acara"], "tanggal_acara": row["tanggal_acara"],
+        "lokasi": row["lokasi"], "kebutuhan": row["kebutuhan"],
+        "deadline": row["deadline"], "pengirim_nama": row["pengirim_nama"],
+    }
+
+
+# Keeps background tasks from being garbage collected mid-batch.
+TUGAS_KIRIM: set[asyncio.Task] = set()
+
+
+async def dispatch_batch(request_id: int) -> None:
+    """Phase B. Runs outside the request handler, commits after every email.
+    One bad row is recorded and skipped; the batch always continues."""
+    permintaan = db.request_detail(request_id)
+    if permintaan is None:
+        return
+    brief = brief_dari_request(permintaan)
+
+    baris = db.list_draft_rows(request_id)
+    for i, row in enumerate(baris):
+        try:
+            subject, body = renderer.render_email(
+                permintaan["subject_template"],
+                permintaan["body_template"],
+                brief,
+                {"nama_pt": row["nama_pt"], "pic_nama": row["pic_nama"],
+                 "kategori": row["kategori"]},
+            )
+            ok, hasil = await mailer.kirim_email(row["email_tujuan"], subject, body)
+            if ok:
+                db.mark_sent(row["id"], hasil)
+            else:
+                db.mark_failed(row["id"], hasil)
+        except Exception as e:
+            db.mark_failed(row["id"], f"{type(e).__name__}: {e}")
+
+        if i < len(baris) - 1:
+            await asyncio.sleep(config.SEND_DELAY_SECONDS)
+
+
+def jadwalkan(request_id: int) -> None:
+    tugas = asyncio.create_task(dispatch_batch(request_id))
+    TUGAS_KIRIM.add(tugas)
+    tugas.add_done_callback(TUGAS_KIRIM.discard)
+
+
+@app.post("/kirim/send")
+async def kirim_send(
+    request: Request,
+    judul_acara: str = Form(""),
+    tanggal_acara: str = Form(""),
+    lokasi: str = Form(""),
+    kebutuhan: str = Form(""),
+    deadline: str = Form(""),
+    pengirim_nama: str = Form(""),
+    vendor_ids: list[str] = Form([]),
+    subject_template: str = Form(""),
+    body_template: str = Form(""),
+    request_id: str = Form(""),
+):
+    """Phase A: one fast transaction, then hand off to the background."""
+    brief = {
+        "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
+        "lokasi": lokasi, "kebutuhan": kebutuhan,
+        "deadline": deadline, "pengirim_nama": pengirim_nama,
+    }
+    ids = list(dict.fromkeys(parse_ids(vendor_ids)))
+    lama = parse_ids([request_id])
+
+    # Layer 2: a request that already dispatched is never sent again.
+    if lama:
+        existing = lama[0]
+        if db.request_detail(existing) is None:
+            raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+        if db.request_has_dispatched(existing):
+            return templates.TemplateResponse(
+                request, "kirim_ditolak.html",
+                {"request_id": existing, "alasan": "Request ini sudah pernah dikirim."},
+                status_code=409,
+            )
+        jadwalkan(existing)
+        return RedirectResponse(f"/tracker/{existing}", status_code=303)
+
+    errors = validasi_brief(brief, ids)
+    if errors:
+        return templates.TemplateResponse(
+            request, "kirim.html",
+            kirim_context(request, brief, ids, None, errors),
+            status_code=422,
+        )
+
+    subject_template = subject_template or renderer.default_subject()
+    body_template = body_template or renderer.default_body()
+
+    # Subjects are rendered up front so every draft row carries its final
+    # subject; Gmail threads a batch together if they are not distinct.
+    subjects = {}
+    for vendor_id in ids:
+        vendor = db.get_vendor(vendor_id)
+        if vendor is None:
+            continue
+        subject, _ = renderer.render_email(
+            subject_template, body_template, brief,
+            {"nama_pt": vendor["nama_pt"], "pic_nama": vendor["pic_nama"],
+             "kategori": vendor["kategori"]},
+        )
+        subjects[vendor_id] = subject
+
+    try:
+        with closing(db.get_conn()) as conn:
+            baru = db.create_request(brief, subject_template, body_template, conn=conn)
+            db.create_outbox_rows(baru, ids, subjects=subjects, conn=conn)
+            conn.commit()
+    except sqlite3.IntegrityError as e:
+        # Layer 3: UNIQUE(request_id, vendor_id).
+        return templates.TemplateResponse(
+            request, "kirim_ditolak.html",
+            {"request_id": None, "alasan": f"Duplikat baris outbox ditolak database: {e}"},
+            status_code=409,
+        )
+
+    jadwalkan(baru)
+    return RedirectResponse(f"/tracker/{baru}", status_code=303)
+
+
+@app.get("/kirim/{request_id}/progress")
+async def kirim_progress(request: Request, request_id: int):
+    if db.request_detail(request_id) is None:
+        raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+    return templates.TemplateResponse(
+        request, "_progress.html",
+        {
+            "request_id": request_id,
+            "p": db.progress(request_id),
+            "rows": db.list_outbox_rows(request_id),
+        },
+    )
+
+
+@app.get("/tracker")
+async def tracker(request: Request):
+    return templates.TemplateResponse(
+        request, "tracker.html", {"requests": db.list_requests()}
+    )
+
+
+@app.get("/tracker/{request_id}")
+async def tracker_detail(request: Request, request_id: int):
+    permintaan = db.request_detail(request_id)
+    if permintaan is None:
+        raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+    return templates.TemplateResponse(
+        request, "tracker_detail.html",
+        {
+            "permintaan": permintaan,
+            "request_id": request_id,
+            "p": db.progress(request_id),
+            "rows": db.list_outbox_rows(request_id),
+        },
+    )
+
+
+@app.post("/tracker/{request_id}/retry")
+async def tracker_retry(request_id: int):
+    if db.request_detail(request_id) is None:
+        raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+
+    # Only failed rows return to draft. Rows still draft from an interrupted
+    # batch are picked up by the same dispatch.
+    db.reset_failed_to_draft(request_id)
+    jadwalkan(request_id)
+    return RedirectResponse(f"/tracker/{request_id}", status_code=303)
 
 
 @app.post("/vendors/{vendor_id}/aktif")

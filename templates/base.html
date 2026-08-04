@@ -9,8 +9,10 @@
   <style>
     .badge { padding: .15rem .55rem; border-radius: 1rem; font-size: .75rem;
              white-space: nowrap; color: #fff; }
-    .badge-aktif { background: #2e7d32; }
-    .badge-nonaktif { background: #78848f; }
+    .badge-aktif, .badge-sent { background: #2e7d32; }
+    .badge-nonaktif, .badge-draft { background: #78848f; }
+    .badge-gagal, .badge-failed { background: #b3261e; }
+    .badge-replied { background: #1565c0; }
     tr.nonaktif td { opacity: .45; }
   </style>
 </head>
@@ -22,7 +24,7 @@
     <ul>
       <li><a href="/vendors">Vendor</a></li>
       <li><a href="/kirim">Kirim</a></li>
-      <li><a href="#">Tracker</a></li>
+      <li><a href="/tracker">Tracker</a></li>
     </ul>
   </nav>
 

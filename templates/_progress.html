@@ -1,0 +1,47 @@
+{# Polled partial. It swaps itself, and the polling attributes disappear once
+   the batch is done, which is what stops the poll. Counts come from SQL. #}
+<div id="progress"
+     {% if not p.selesai %}
+     hx-get="/kirim/{{ request_id }}/progress"
+     hx-trigger="every 1.5s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  <p>
+    <strong>{{ p.sent }} dari {{ p.total }} terkirim</strong>
+    {% if p.failed %} · <span class="badge badge-gagal">{{ p.failed }} gagal</span>{% endif %}
+    {% if p.draft %} · {{ p.draft }} menunggu{% endif %}
+    {% if p.selesai %} · selesai{% endif %}
+  </p>
+
+  <progress value="{{ p.sent + p.failed }}" max="{{ p.total or 1 }}"></progress>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nama PT</th>
+        <th>Kategori</th>
+        <th>Email tujuan</th>
+        <th>Status</th>
+        <th>Terkirim</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.nama_pt }}</td>
+        <td>{{ r.kategori or "—" }}</td>
+        <td>{{ r.email_tujuan }}</td>
+        <td>
+          <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        </td>
+        <td>{{ r.sent_at or "—" }}</td>
+        <td><small>{{ r.error_msg or "" }}</small></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6"><em>Belum ada baris outbox.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

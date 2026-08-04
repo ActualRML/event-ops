@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Preview — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<h2>Preview RFQ</h2>
+
+{% if render_error %}
+<article>
+  <strong>Template gagal dirender.</strong> {{ render_error }}<br>
+  Perbaiki template di bawah, lalu perbarui preview.
+</article>
+{% endif %}
+
+<article>
+  <header>
+    <strong>Contoh email</strong> — dirender untuk
+    {{ contoh.nama_pt }} &lt;{{ contoh.email }}&gt;
+  </header>
+
+  <p><strong>Subject:</strong> {{ subject }}</p>
+  <pre style="white-space: pre-wrap">{{ body }}</pre>
+</article>
+
+<article>
+  <header><strong>Penerima</strong> — {{ vendors|length }} vendor</header>
+  <table>
+    <thead>
+      <tr><th>Nama PT</th><th>Email</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for v in vendors %}
+      <tr>
+        <td>{{ v.nama_pt }}</td>
+        <td>{{ v.email }}</td>
+        <td>{% if loop.first %}<span class="badge badge-aktif">contoh di atas</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+
+{# Default action is the preview route, so Enter in a field re-previews
+   instead of reaching the send route. TODO phase 5: enable the Kirim button. #}
+<form id="form-preview" method="post" action="/kirim/preview">
+  <input type="hidden" name="judul_acara" value="{{ brief.judul_acara }}">
+  <input type="hidden" name="tanggal_acara" value="{{ brief.tanggal_acara }}">
+  <input type="hidden" name="lokasi" value="{{ brief.lokasi }}">
+  <input type="hidden" name="kebutuhan" value="{{ brief.kebutuhan }}">
+  <input type="hidden" name="deadline" value="{{ brief.deadline }}">
+  <input type="hidden" name="pengirim_nama" value="{{ brief.pengirim_nama }}">
+  <input type="hidden" name="category_id" value="{{ category_id }}">
+  {% for vid in vendor_ids %}
+  <input type="hidden" name="vendor_ids" value="{{ vid }}">
+  {% endfor %}
+
+  <article>
+    <header><strong>Template</strong></header>
+
+    <label>
+      Subject
+      <input name="subject_template" value="{{ subject_template }}">
+    </label>
+
+    <label>
+      Body
+      <textarea name="body_template" rows="20">{{ body_template }}</textarea>
+    </label>
+
+    <small>
+      Placeholder tersedia: nama_pt, pic_nama, kategori, judul_acara,
+      tanggal_acara, lokasi, kebutuhan, deadline, pengirim_nama.
+    </small>
+  </article>
+
+  <fieldset role="group">
+    <button type="submit">Perbarui preview</button>
+    {# Layer 1 of the double-send guard: the button disables itself the moment
+       the POST is on its way. Disabling happens after submit so the request
+       still carries formaction. #}
+    <button type="submit" id="tombol-kirim" formaction="/kirim/send"
+            onclick="kunciKirim(this)">Kirim sekarang</button>
+    <a href="/kirim" role="button" class="secondary">Kembali</a>
+  </fieldset>
+</form>
+
+<script>
+  function kunciKirim(tombol) {
+    setTimeout(function () {
+      tombol.disabled = true;
+      tombol.textContent = 'Mengirim…';
+    }, 0);
+  }
+</script>
+{% endblock %}

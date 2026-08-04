@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ permintaan.judul_acara }} — Tracker{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h2>{{ permintaan.judul_acara }}</h2>
+  <p>Request #{{ request_id }} · dibuat {{ permintaan.created_at }}</p>
+</hgroup>
+
+<article>
+  {% include "_progress.html" %}
+</article>
+
+<fieldset role="group">
+  <form method="post" action="/tracker/{{ request_id }}/retry">
+    <button type="submit" {% if not p.failed and not p.draft %}disabled{% endif %}>
+      Retry yang gagal
+    </button>
+  </form>
+  <a href="/tracker" role="button" class="secondary">Semua request</a>
+</fieldset>
+{% endblock %}

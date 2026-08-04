@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Pengiriman ditolak — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<h2>Pengiriman ditolak</h2>
+
+<article>
+  <strong>{{ alasan }}</strong>
+  <p>
+    Tidak ada email tambahan yang dikirim. Untuk mengirim ulang yang gagal,
+    gunakan tombol retry di halaman tracker.
+  </p>
+</article>
+
+<fieldset role="group">
+  {% if request_id %}
+  <a href="/tracker/{{ request_id }}" role="button">Lihat tracker request ini</a>
+  {% endif %}
+  <a href="/kirim" role="button" class="secondary">Kembali ke Kirim</a>
+</fieldset>
+{% endblock %}

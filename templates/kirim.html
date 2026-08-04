@@ -4,42 +4,54 @@
 {% block content %}
 <h2>Kirim RFQ</h2>
 
-{# TODO phase 4: point action at the preview route and drop onsubmit. The
-   guard stops Enter-in-a-text-field from posting to a route that does not
-   exist yet. #}
-<form id="form-kirim" method="post" action="/kirim/preview" onsubmit="return false">
+{% if errors %}
+<article>
+  <strong>Belum bisa lanjut ke preview.</strong> Periksa isian yang ditandai di bawah.
+  {% if errors.vendor %}<br>{{ errors.vendor }}{% endif %}
+</article>
+{% endif %}
+
+<form id="form-kirim" method="post" action="/kirim/preview">
   <article>
     <header><strong>Brief acara</strong></header>
 
     <label>
       Judul acara
-      <input name="judul_acara" required>
+      <input name="judul_acara" value="{{ brief.judul_acara }}"
+             {% if errors.judul_acara %}aria-invalid="true"{% endif %}>
+      {% if errors.judul_acara %}<small>{{ errors.judul_acara }}</small>{% endif %}
     </label>
 
     <div class="grid">
       <label>
         Tanggal acara
-        <input type="date" name="tanggal_acara">
+        <input type="date" name="tanggal_acara" value="{{ brief.tanggal_acara }}"
+               {% if errors.tanggal_acara %}aria-invalid="true"{% endif %}>
+        {% if errors.tanggal_acara %}<small>{{ errors.tanggal_acara }}</small>{% endif %}
       </label>
       <label>
         Deadline penawaran
-        <input type="date" name="deadline">
+        <input type="date" name="deadline" value="{{ brief.deadline }}"
+               {% if errors.deadline %}aria-invalid="true"{% endif %}>
+        {% if errors.deadline %}<small>{{ errors.deadline }}</small>{% endif %}
       </label>
     </div>
 
     <label>
       Lokasi
-      <input name="lokasi">
+      <input name="lokasi" value="{{ brief.lokasi }}">
     </label>
 
     <label>
       Kebutuhan
-      <textarea name="kebutuhan" rows="3"></textarea>
+      <textarea name="kebutuhan" rows="3"
+                {% if errors.kebutuhan %}aria-invalid="true"{% endif %}>{{ brief.kebutuhan }}</textarea>
+      {% if errors.kebutuhan %}<small>{{ errors.kebutuhan }}</small>{% endif %}
     </label>
 
     <label>
       Nama pengirim
-      <input name="pengirim_nama">
+      <input name="pengirim_nama" value="{{ brief.pengirim_nama }}">
     </label>
   </article>
 
@@ -62,14 +74,18 @@
       {% include "_vendor_list.html" %}
     </div>
 
-    {# Outside #daftar-vendor so an HTMX swap cannot clear it. #}
-    <div id="terpilih" hidden></div>
+    {# Outside #daftar-vendor so an HTMX swap cannot clear it. Repopulated by
+       the server when a validation bounce sends the user back here. #}
+    <div id="terpilih" hidden>
+      {% for t in terpilih %}
+      <input type="hidden" name="vendor_ids" value="{{ t.id }}" data-kategori="{{ t.kategori }}">
+      {% endfor %}
+    </div>
 
     <p id="counter" aria-live="polite"></p>
   </article>
 
-  {# TODO phase 4: wire this to the preview screen. #}
-  <button type="submit" disabled>Lanjut ke preview</button>
+  <button type="submit">Lanjut ke preview</button>
 </form>
 
 <script>
