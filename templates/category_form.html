@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Add Category — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<hgroup class="judul-rapat">
+  <h2>Add Category</h2>
+</hgroup>
+
+{% if errors %}
+<article>
+  <strong>Could not save the category.</strong> Check the field flagged below.
+</article>
+{% endif %}
+
+{# form-vendor for the shared label, spacing, and button metrics; form-sempit
+   caps the width so a single short field does not span the whole panel. #}
+<form method="post" action="/categories" class="form-rapat form-vendor form-sempit">
+  <label>
+    Category name
+    <input name="nama" value="{{ nama }}" autofocus
+           placeholder="e.g. Decoration"
+           {% if errors.nama %}aria-invalid="true"{% endif %}>
+    {% if errors.nama %}<small>{{ errors.nama }}</small>{% endif %}
+  </label>
+
+  <div class="baris-aksi">
+    <button type="submit">Save</button>
+    <a href="/vendors" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+
+{# Listed so a near-duplicate ("Sound" next to "Sound System") is visible
+   before saving, not after. #}
+<p class="kategori-ada">
+  Existing: {% for c in categories %}{{ c.nama }}{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+{% endblock %}

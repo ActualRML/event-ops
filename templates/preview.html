@@ -2,49 +2,57 @@
 {% block title %}Preview — Vendor RFQ Blast{% endblock %}
 
 {% block content %}
-<hgroup>
+<hgroup class="judul-rapat">
   <h2>Preview RFQ</h2>
-  <p>Langkah 2 dari 2 · {{ vendors|length }} email siap dikirim, satu per vendor.</p>
 </hgroup>
 
 {% if render_error %}
 <article>
-  <strong>Template gagal dirender.</strong> {{ render_error }}<br>
-  Perbaiki template di bawah, lalu perbarui preview.
+  <strong>Template failed to render.</strong> {{ render_error }}<br>
+  Fix the template files in <code>email_templates/</code>, then open this
+  preview again.
 </article>
 {% endif %}
 
-<article>
-  <header>
-    <strong>Contoh email</strong> — dirender untuk
-    {{ contoh.nama_pt }} &lt;{{ contoh.email }}&gt;
-  </header>
+<section>
+  <h3>Sample email</h3>
+  {# Which vendor the sample came from is marked "sample above" in the
+     Recipients table, so it is not repeated here. #}
+  <p class="subjek"><strong>Subject:</strong> {{ subject }}</p>
+  <pre class="pratinjau">{{ body }}</pre>
+</section>
 
-  <p><strong>Subject:</strong> {{ subject }}</p>
-  <pre style="white-space: pre-wrap">{{ body }}</pre>
-</article>
-
-<article>
-  <header><strong>Penerima</strong> — {{ vendors|length }} vendor</header>
-  <table>
+<section>
+  <h3>Recipients</h3>
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 34%">
+      <col style="width: 40%">
+      <col style="width: 26%">
+    </colgroup>
     <thead>
-      <tr><th>Nama PT</th><th>Email</th><th></th></tr>
+      <tr><th>Company</th><th>Email</th><th></th></tr>
     </thead>
     <tbody>
       {% for v in vendors %}
       <tr>
         <td><strong>{{ v.nama_pt }}</strong></td>
-        <td class="redup">{{ v.email }}</td>
-        <td>{% if loop.first %}<span class="badge badge-aktif">contoh di atas</span>{% endif %}</td>
+        <td class="redup sel-teks" title="{{ v.email }}">{{ v.email }}</td>
+        {# Muted text, not a badge: this marks which row the sample above came
+           from, and a green badge would read as a status. #}
+        <td class="redup">{% if loop.first %}sample above{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-</article>
+</section>
 
-{# Default action is the preview route, so Enter in a field re-previews
-   instead of reaching the send route. TODO phase 5: enable the Kirim button. #}
-<form id="form-preview" method="post" action="/kirim/preview">
+{# Template is developer-only: subject and body come from email_templates/ via
+   renderer, and nothing here posts them back. The routes already treat an
+   empty template as "use the file", so leaving the fields out is all it takes,
+   and requests.subject_template/body_template still records what was sent.
+   This form only carries the brief and the vendor selection. #}
+<form id="form-preview" method="post" action="/send/preview">
   <input type="hidden" name="judul_acara" value="{{ brief.judul_acara }}">
   <input type="hidden" name="tanggal_acara" value="{{ brief.tanggal_acara }}">
   <input type="hidden" name="lokasi" value="{{ brief.lokasi }}">
@@ -56,46 +64,27 @@
   <input type="hidden" name="vendor_ids" value="{{ vid }}">
   {% endfor %}
 
-  <article>
-    <header><strong>Template</strong></header>
-
-    <label>
-      Subject
-      <input name="subject_template" value="{{ subject_template }}">
-    </label>
-
-    <label>
-      Body
-      <textarea name="body_template" rows="20">{{ body_template }}</textarea>
-    </label>
-
-    <small>
-      Placeholder tersedia: nama_pt, pic_nama, kategori, judul_acara,
-      tanggal_acara, lokasi, kebutuhan, deadline, pengirim_nama.
-    </small>
-  </article>
-
-  {# Kirim is the primary action here; the other two are styled down so it
-     dominates. Order is unchanged — the first submit is still the preview
-     route, which is what Enter in a field triggers. #}
-  <fieldset role="group">
-    <button type="submit" class="secondary outline">Perbarui preview</button>
+  {# Send now is the primary action and sits last, as on every other page.
+     "Perbarui preview" is gone with the editor — there is nothing left on this
+     screen to update. Order still matters: implicit submission picks the first
+     submit button, so it lands on Back, never on the dispatch route. #}
+  <div class="baris-aksi-kanan">
+    {# Posts the hidden brief and vendor ids back so nothing is lost. A plain
+       link to /send would drop the whole selection. #}
+    <button type="submit" formaction="/send/back" class="secondary outline">Back</button>
     {# Layer 1 of the double-send guard: the button disables itself the moment
        the POST is on its way. Disabling happens after submit so the request
        still carries formaction. #}
-    <button type="submit" id="tombol-kirim" formaction="/kirim/send"
-            onclick="kunciKirim(this)">Kirim sekarang</button>
-    {# Posts the hidden brief and vendor ids back so nothing is lost. A plain
-       link to /kirim would drop the whole selection. #}
-    <button type="submit" formaction="/kirim/kembali" class="secondary outline">Kembali</button>
-  </fieldset>
+    <button type="submit" id="tombol-kirim" formaction="/send/dispatch"
+            onclick="kunciKirim(this)">Send now</button>
+  </div>
 </form>
 
 <script>
   function kunciKirim(tombol) {
     setTimeout(function () {
       tombol.disabled = true;
-      tombol.textContent = 'Mengirim…';
+      tombol.textContent = 'Sending…';
     }, 0);
   }
 </script>

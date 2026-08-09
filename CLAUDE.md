@@ -19,8 +19,11 @@ quality. Optimize for something demonstrable, not something maintainable.
 Dependencies: fastapi, uvicorn[standard], jinja2, python-multipart,
 python-dotenv, aiosmtplib. Nothing else without asking.
 
-Identifiers (columns, routes, UI labels) in Indonesian. Code, comments,
-and commit messages in English.
+UI text and routes in English. Database columns, form field names, and the
+contents of email_templates/ stay Indonesian — the emails go to Indonesian
+vendors, and renderer.format_tanggal exists to keep dates in the message body
+Indonesian while the interface uses format_date. Code, comments, and commit
+messages in English.
 
 ## Flow
 brief → select category + check vendors (cross-category) → preview →

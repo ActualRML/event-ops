@@ -5,6 +5,7 @@ import re
 import sqlite3
 from contextlib import closing
 from datetime import date
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
@@ -20,8 +21,15 @@ app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
-# Presentation only: ISO dates read as "18 September 2026" in the templates.
-templates.env.filters["tanggal"] = renderer.format_tanggal
+# Presentation only. These are the English formatters — renderer.format_tanggal
+# stays Indonesian and is reserved for the email body.
+templates.env.filters["date"] = renderer.format_date
+# created_at carries a clock time, which the date-only filter cannot parse.
+templates.env.filters["datetime"] = renderer.format_datetime
+# Raw SMTP exceptions are unreadable for the procurement staff who use this.
+templates.env.filters["error_message"] = renderer.pesan_error
+# Footer year. Read at startup — a demo restarts far more often than a year turns.
+templates.env.globals["tahun"] = date.today().year
 
 NO_HP_ALLOWED = re.compile(r"^[0-9 +\-]+$")
 
@@ -32,29 +40,29 @@ def validasi_email(email: str) -> str | None:
     trimmed first; whitespace left inside is the actual defect."""
     email = email.strip()
     if not email:
-        return "Email wajib diisi."
+        return "Email is required."
     if any(ch.isspace() for ch in email):
-        return "Email tidak boleh mengandung spasi."
+        return "Email cannot contain spaces."
     if "," in email:
-        return "Email tidak boleh mengandung koma."
+        return "Email cannot contain commas."
     if "@" not in email:
-        return "Email harus mengandung @."
+        return "Email must contain @."
     if email.count("@") > 1:
-        return "Email hanya boleh punya satu @."
+        return "Email can only have one @."
 
     local, _, domain = email.partition("@")
     if not local:
-        return "Bagian sebelum @ tidak boleh kosong."
+        return "The part before @ cannot be empty."
     if not domain:
-        return "Bagian setelah @ tidak boleh kosong."
+        return "The part after @ cannot be empty."
     if ".." in email:
-        return "Email tidak boleh punya titik berurutan."
+        return "Email cannot contain consecutive dots."
     if local.startswith(".") or local.endswith("."):
-        return "Bagian sebelum @ tidak boleh diawali atau diakhiri titik."
+        return "The part before @ cannot start or end with a dot."
     if domain.startswith(".") or domain.endswith("."):
-        return "Domain tidak boleh diawali atau diakhiri titik."
+        return "The domain cannot start or end with a dot."
     if "." not in domain:
-        return "Domain harus mengandung titik."
+        return "The domain must contain a dot."
     return None
 
 
@@ -63,7 +71,7 @@ def validasi_vendor(data: dict, category_ids: list[int]) -> dict:
     errors = {}
 
     if not data["nama_pt"].strip():
-        errors["nama_pt"] = "Nama PT wajib diisi."
+        errors["nama_pt"] = "Company name is required."
 
     pesan = validasi_email(data["email"])
     if pesan:
@@ -71,14 +79,14 @@ def validasi_vendor(data: dict, category_ids: list[int]) -> dict:
 
     no_hp = data["no_hp"].strip()
     if no_hp and not NO_HP_ALLOWED.match(no_hp):
-        errors["no_hp"] = "No HP hanya boleh berisi angka, spasi, tanda plus, dan tanda minus."
+        errors["no_hp"] = "Phone may only contain digits, spaces, plus and minus signs."
 
     if not category_ids:
-        errors["kategori"] = "Pilih minimal satu kategori."
+        errors["kategori"] = "Select at least one category."
     else:
         dikenal = {c["id"] for c in db.list_categories()}
         if not set(category_ids) <= dikenal:
-            errors["kategori"] = "Ada kategori yang tidak dikenal."
+            errors["kategori"] = "One of the categories is unknown."
 
     return errors
 
@@ -114,20 +122,62 @@ async def index(request: Request):
 
 
 @app.get("/vendors")
-async def vendor_list(request: Request, kategori: str = ""):
+async def vendor_list(request: Request, category: str = "", q: str = ""):
+    # Search-as-you-type and the category filter both land here. HTMX gets the
+    # table fragment; a normal navigation or a refresh gets the whole page, off
+    # the same query — so a swapped view and a reloaded one always agree.
+    # A history restore also arrives with HX-Request set but wants the whole
+    # page: it replaces the body, and a fragment there deletes the controls.
+    htmx = (request.headers.get("HX-Request") == "true"
+            and request.headers.get("HX-History-Restore-Request") != "true")
     return templates.TemplateResponse(
         request,
-        "vendors.html",
+        "_vendor_tabel.html" if htmx else "vendors.html",
         {
             # Inactive vendors stay listed here; aktif_only is for the send path.
-            "vendors": db.list_vendors(kategori=kategori or None, aktif_only=False),
+            "vendors": db.list_vendors(
+                kategori=category or None, q=q or None, aktif_only=False
+            ),
             "categories": db.list_categories(),
-            "kategori": kategori,
+            "category": category,
+            "q": q,
+            # The chips swap out of band, but only when there is a swap.
+            "oob": htmx,
         },
     )
 
 
-@app.get("/vendors/baru")
+@app.get("/categories/new")
+async def category_form_baru(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "category_form.html",
+        {"nama": "", "errors": {}, "categories": db.list_categories()},
+    )
+
+
+@app.post("/categories")
+async def category_create(request: Request, nama: str = Form("")):
+    bersih = nama.strip()
+    errors = {}
+    if not bersih:
+        errors["nama"] = "Category name is required."
+    elif db.category_exists(bersih):
+        errors["nama"] = f"Category “{bersih}” already exists."
+
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "category_form.html",
+            {"nama": nama, "errors": errors, "categories": db.list_categories()},
+            status_code=422,
+        )
+
+    db.create_category(bersih)
+    return RedirectResponse("/vendors", status_code=303)
+
+
+@app.get("/vendors/new")
 async def vendor_form_baru(request: Request):
     kosong = {
         "nama_pt": "", "pic_nama": "", "email": "",
@@ -136,7 +186,7 @@ async def vendor_form_baru(request: Request):
     return templates.TemplateResponse(
         request,
         "vendor_form.html",
-        form_context(request, "Tambah Vendor", "/vendors", kosong, [], {}),
+        form_context(request, "Add Vendor", "/vendors", kosong, [], {}),
     )
 
 
@@ -164,7 +214,7 @@ async def vendor_create(
         return templates.TemplateResponse(
             request,
             "vendor_form.html",
-            form_context(request, "Tambah Vendor", "/vendors", data, ids, errors),
+            form_context(request, "Add Vendor", "/vendors", data, ids, errors),
             status_code=422,
         )
 
@@ -181,7 +231,7 @@ async def vendor_create(
 async def vendor_form_edit(request: Request, vendor_id: int):
     vendor = db.get_vendor(vendor_id)
     if vendor is None:
-        raise HTTPException(status_code=404, detail="Vendor tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Vendor not found")
 
     data = {
         "nama_pt": vendor["nama_pt"] or "",
@@ -220,7 +270,7 @@ async def vendor_update(
     kategori_ids: list[str] = Form([]),
 ):
     if db.get_vendor(vendor_id) is None:
-        raise HTTPException(status_code=404, detail="Vendor tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Vendor not found")
 
     data = {
         "nama_pt": nama_pt, "pic_nama": pic_nama, "email": email,
@@ -272,25 +322,25 @@ def validasi_brief(brief: dict, vendor_ids: list[int]) -> dict:
     errors = {}
 
     if not brief["judul_acara"].strip():
-        errors["judul_acara"] = "Judul acara wajib diisi."
+        errors["judul_acara"] = "Event title is required."
     if not brief["kebutuhan"].strip():
-        errors["kebutuhan"] = "Kebutuhan wajib diisi."
+        errors["kebutuhan"] = "Requirements are required."
     if not vendor_ids:
-        errors["vendor"] = "Pilih minimal satu vendor."
+        errors["vendor"] = "Select at least one vendor."
 
     tanggal_acara = parse_tanggal(brief["tanggal_acara"])
     deadline = parse_tanggal(brief["deadline"])
 
     if brief["tanggal_acara"].strip() and tanggal_acara is None:
-        errors["tanggal_acara"] = "Format tanggal tidak valid."
+        errors["tanggal_acara"] = "Invalid date format."
     if brief["deadline"].strip() and deadline is None:
-        errors["deadline"] = "Format tanggal tidak valid."
+        errors["deadline"] = "Invalid date format."
 
     if deadline is not None:
         if deadline < date.today():
-            errors["deadline"] = "Deadline tidak boleh sebelum hari ini."
+            errors["deadline"] = "Deadline cannot be before today."
         elif tanggal_acara is not None and deadline > tanggal_acara:
-            errors["deadline"] = "Deadline harus sebelum atau sama dengan tanggal acara."
+            errors["deadline"] = "Deadline must be on or before the event date."
 
     return errors
 
@@ -324,7 +374,7 @@ def kirim_context(request: Request, brief: dict, selected_ids: list[int],
     }
 
 
-@app.get("/kirim")
+@app.get("/send")
 async def kirim(request: Request):
     # Selection starts empty; it lives in the page, not the session.
     return templates.TemplateResponse(
@@ -332,7 +382,7 @@ async def kirim(request: Request):
     )
 
 
-@app.post("/kirim/kembali")
+@app.post("/send/back")
 async def kirim_kembali(
     request: Request,
     judul_acara: str = Form(""),
@@ -367,7 +417,7 @@ async def kirim_kembali(
     )
 
 
-@app.post("/kirim/preview")
+@app.post("/send/preview")
 async def kirim_preview(
     request: Request,
     judul_acara: str = Form(""),
@@ -410,6 +460,8 @@ async def kirim_preview(
     subject_template = subject_template or renderer.default_subject()
     body_template = body_template or renderer.default_body()
 
+    # First vendor in click order supplies the data for the sample email. The
+    # preview no longer names it — the Penerima table marks its row instead.
     contoh = vendors[0]
     render_error = None
     subject, body = "", ""
@@ -436,14 +488,13 @@ async def kirim_preview(
             "body_template": body_template,
             "subject": subject,
             "body": body,
-            "contoh": contoh,
             "render_error": render_error,
         },
         status_code=422 if render_error else 200,
     )
 
 
-@app.get("/kirim/vendors")
+@app.get("/send/vendors")
 async def kirim_vendors(
     request: Request,
     category_id: int,
@@ -509,7 +560,7 @@ def jadwalkan(request_id: int) -> None:
     tugas.add_done_callback(TUGAS_KIRIM.discard)
 
 
-@app.post("/kirim/send")
+@app.post("/send/dispatch")
 async def kirim_send(
     request: Request,
     judul_acara: str = Form(""),
@@ -536,11 +587,11 @@ async def kirim_send(
     if lama:
         existing = lama[0]
         if db.request_detail(existing) is None:
-            raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+            raise HTTPException(status_code=404, detail="Request not found")
         if db.request_has_dispatched(existing):
             return templates.TemplateResponse(
                 request, "kirim_ditolak.html",
-                {"request_id": existing, "alasan": "Request ini sudah pernah dikirim."},
+                {"request_id": existing, "alasan": "This request has already been sent."},
                 status_code=409,
             )
         jadwalkan(existing)
@@ -583,7 +634,7 @@ async def kirim_send(
         # Layer 3: UNIQUE(request_id, vendor_id).
         return templates.TemplateResponse(
             request, "kirim_ditolak.html",
-            {"request_id": None, "alasan": f"Duplikat baris outbox ditolak database: {e}"},
+            {"request_id": None, "alasan": f"Duplicate outbox row rejected by the database: {e}"},
             status_code=409,
         )
 
@@ -591,10 +642,10 @@ async def kirim_send(
     return RedirectResponse(f"/tracker/{baru}", status_code=303)
 
 
-@app.get("/kirim/{request_id}/progress")
+@app.get("/send/{request_id}/progress")
 async def kirim_progress(request: Request, request_id: int):
     if db.request_detail(request_id) is None:
-        raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Request not found")
     return templates.TemplateResponse(
         request, "_progress.html",
         {
@@ -616,7 +667,7 @@ async def tracker(request: Request):
 async def tracker_detail(request: Request, request_id: int):
     permintaan = db.request_detail(request_id)
     if permintaan is None:
-        raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Request not found")
     return templates.TemplateResponse(
         request, "tracker_detail.html",
         {
@@ -631,7 +682,7 @@ async def tracker_detail(request: Request, request_id: int):
 @app.post("/tracker/{request_id}/retry")
 async def tracker_retry(request_id: int):
     if db.request_detail(request_id) is None:
-        raise HTTPException(status_code=404, detail="Request tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Request not found")
 
     # Only failed rows return to draft. Rows still draft from an interrupted
     # batch are picked up by the same dispatch.
@@ -640,12 +691,16 @@ async def tracker_retry(request_id: int):
     return RedirectResponse(f"/tracker/{request_id}", status_code=303)
 
 
-@app.post("/vendors/{vendor_id}/aktif")
-async def vendor_toggle_aktif(vendor_id: int, kategori: str = Form("")):
+@app.post("/vendors/{vendor_id}/toggle-active")
+async def vendor_toggle_aktif(vendor_id: int, category: str = Form(""),
+                              q: str = Form("")):
     vendor = db.get_vendor(vendor_id)
     if vendor is None:
-        raise HTTPException(status_code=404, detail="Vendor tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Vendor not found")
 
     db.set_vendor_aktif(vendor_id, 0 if vendor["aktif"] else 1)
-    tujuan = f"/vendors?kategori={kategori}" if kategori else "/vendors"
-    return RedirectResponse(tujuan, status_code=303)
+    # Both filters ride back so the row does not vanish from view on toggle.
+    # urlencode rather than an f-string: a search term may hold & or a space.
+    saring = urlencode({k: v for k, v in (("category", category), ("q", q)) if v})
+    return RedirectResponse(f"/vendors?{saring}" if saring else "/vendors",
+                            status_code=303)

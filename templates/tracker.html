@@ -4,19 +4,33 @@
 {% block content %}
 <hgroup>
   <h2>Tracker</h2>
-  <p>{{ requests|length }} request pengiriman, terbaru di atas.</p>
+  <p class="chips">
+    <span class="chip"><span class="chip-angka">{{ requests|length }}</span> send request{{ "s" if requests|length != 1 }}</span>
+    <span class="chip">newest first</span>
+  </p>
 </hgroup>
 
 {# Newest first comes from db.list_requests() (ORDER BY r.id DESC); nothing is
    re-sorted here. #}
-<table>
+<table class="tabel">
+  {# Pengiriman takes only what its widest row needs ("6/8 terkirim" plus the
+     gagal badge, ~181px). The 6% freed goes to the title, which is the column
+     that actually runs out of room. #}
+  <colgroup>
+    <col style="width: 6%">
+    <col style="width: 32%">
+    <col style="width: 16%">
+    <col style="width: 18%">
+    <col style="width: 18%">
+    <col style="width: 10%">
+  </colgroup>
   <thead>
     <tr>
       <th>#</th>
-      <th>Judul acara</th>
-      <th>Tanggal acara</th>
-      <th>Dibuat</th>
-      <th>Pengiriman</th>
+      <th>Event</th>
+      <th>Event date</th>
+      <th>Created</th>
+      <th>Delivery</th>
       <th></th>
     </tr>
   </thead>
@@ -25,20 +39,32 @@
     <tr>
       <td class="angka">{{ r.id }}</td>
       <td><strong>{{ r.judul_acara }}</strong></td>
-      <td>{{ r.tanggal_acara | tanggal or "—" }}</td>
-      <td class="redup">{{ r.created_at }}</td>
+      <td>{{ r.tanggal_acara | date or "—" }}</td>
+      <td class="redup">{{ r.created_at | datetime }}</td>
+      {# Count and badges are one statement about one batch, so they share a
+         cell. Flex rather than inline flow: an inline-block badge sits on the
+         text baseline, which leaves it ~8px above the words next to it. #}
       <td>
-        {{ r.sent }}/{{ r.total }} terkirim
-        {% if r.failed %}<span class="badge badge-gagal">{{ r.failed }} gagal</span>{% endif %}
-        {% if r.draft %}<span class="badge badge-draft">{{ r.draft }} menunggu</span>{% endif %}
+        <div class="kirim-ringkas">
+          <span>{{ r.sent }}/{{ r.total }} sent</span>
+          {% if r.failed %}<span class="badge badge-gagal">{{ r.failed }} failed</span>{% endif %}
+          {% if r.draft %}<span class="badge badge-draft">{{ r.draft }} pending</span>{% endif %}
+        </div>
       </td>
-      <td><a href="/tracker/{{ r.id }}" role="button" class="secondary outline">Detail</a></td>
+      <td class="aksi">
+        {# Same grup wrapper as the vendor table, so the button measures the
+           same 5rem here as it does there. #}
+        <div class="aksi-grup">
+          <a href="/tracker/{{ r.id }}" role="button"
+             class="secondary outline btn-mini">Details</a>
+        </div>
+      </td>
     </tr>
     {% else %}
     <tr>
       <td colspan="6" class="kosong">
-        Belum ada request yang pernah dikirim. Buat yang pertama lewat halaman
-        Kirim — setiap batch akan muncul di sini beserta status per vendor.
+        No send requests yet. Create the first one from the Send page — every
+        batch shows up here with its per-vendor status.
       </td>
     </tr>
     {% endfor %}

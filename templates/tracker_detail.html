@@ -4,22 +4,26 @@
 {% block content %}
 <hgroup>
   <h2>{{ permintaan.judul_acara }}</h2>
-  <p>
-    Request #{{ request_id }} · {{ p.total }} vendor · acara
-    {{ permintaan.tanggal_acara | tanggal or "tanpa tanggal" }} · dibuat {{ permintaan.created_at }}
+  <p class="chips">
+    {# No vendor count here: the Total metric card below already carries it. #}
+    <span class="chip">Request <span class="chip-angka">#{{ request_id }}</span></span>
+    <span class="chip">event <span class="chip-angka">{{ permintaan.tanggal_acara | date or "no date" }}</span></span>
+    <span class="chip">deadline <span class="chip-angka">{{ permintaan.deadline | date or "not set" }}</span></span>
+    {# Label stays muted, value goes bold — same as the chip beside it. #}
+    <span class="chip">created <span class="chip-angka">{{ permintaan.created_at | datetime }}</span></span>
   </p>
 </hgroup>
 
-<article>
-  {% include "_progress.html" %}
-</article>
+{# No wrapper panel: the metrics and the table sit straight on the page panel,
+   the way the vendor and tracker tables do. #}
+{% include "_progress.html" %}
 
-<fieldset role="group">
+<div class="baris-aksi-kanan">
+  <a href="/tracker" role="button" class="secondary outline">All requests</a>
   <form method="post" action="/tracker/{{ request_id }}/retry">
     <button type="submit" {% if not p.failed and not p.draft %}disabled{% endif %}>
-      Retry yang gagal
+      Retry failed
     </button>
   </form>
-  <a href="/tracker" role="button" class="secondary outline">Semua request</a>
-</fieldset>
+</div>
 {% endblock %}

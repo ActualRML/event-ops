@@ -1,0 +1,74 @@
+{# Rendered inline on first paint, and returned on its own for every search or
+   filter swap. Same template both ways, so the two can never drift.
+   The chips ride along only on a swap — the full page already renders them up
+   in the header, and emitting them here too would duplicate the id. #}
+{% if oob %}{% include "_vendor_chips.html" %}{% endif %}
+
+<table class="tabel" id="tabel-vendor">
+  {# nama_pt takes 4% off email: the longest seeded name measures 199px and
+     needs the room, while email truncates at any width. #}
+  <colgroup>
+    <col style="width: 24%">
+    <col style="width: 14%">
+    <col style="width: 20%">
+    <col style="width: 13%">
+    <col style="width: 11%">
+    <col style="width: 18%">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>Company</th>
+      <th>PIC</th>
+      <th>Email</th>
+      <th>Category</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for v in vendors %}
+    <tr {% if not v.aktif %}class="nonaktif"{% endif %}>
+      <td><strong>{{ v.nama_pt }}</strong></td>
+      <td class="redup">{{ v.pic_nama or "—" }}</td>
+      <td class="redup sel-teks" title="{{ v.email }}">{{ v.email }}</td>
+      <td class="sel-kategori">{{ v.kategori or "—" }}</td>
+      {# Label on one line: newlines inside the span become whitespace that
+         widens a nowrap badge. #}
+      <td><span class="badge {{ 'badge-aktif' if v.aktif else 'badge-nonaktif' }}">{{ "Active" if v.aktif else "Inactive" }}</span></td>
+      <td class="aksi">
+        {# Plain flex instead of role="group" — the grouped fieldset drew a
+           heavy joined box around both controls. #}
+        <div class="aksi-grup">
+          <a href="/vendors/{{ v.id }}/edit" role="button"
+             class="secondary outline btn-mini">Edit</a>
+          {# Both filters ride along so the row stays in view after the toggle
+             redirect. Re-rendered on every swap, so they are never stale. #}
+          <form method="post" action="/vendors/{{ v.id }}/toggle-active">
+            <input type="hidden" name="category" value="{{ category }}">
+            <input type="hidden" name="q" value="{{ q }}">
+            <button type="submit" class="outline btn-mini btn-mati">
+              {{ "Deactivate" if v.aktif else "Activate" }}
+            </button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="kosong">
+        {% if q %}
+        No vendors match “{{ q }}”{% if category %} in category
+        {{ category }}{% endif %}. Try a shorter keyword, or clear the search to
+        see the whole list.
+        {% elif category %}
+        No vendors in category {{ category }} yet. Pick “All categories” to see
+        the whole list, or add a new vendor to this category.
+        {% else %}
+        No vendors at all yet. Start with “Add Vendor” — a new RFQ can only go
+        out once there is at least one active vendor.
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

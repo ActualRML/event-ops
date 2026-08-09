@@ -1,21 +1,23 @@
 {% extends "base.html" %}
-{% block title %}Pengiriman ditolak — Vendor RFQ Blast{% endblock %}
+{% block title %}Send rejected — Vendor RFQ Blast{% endblock %}
 
 {% block content %}
-<h2>Pengiriman ditolak</h2>
+<hgroup class="judul-rapat">
+  <h2>Send rejected</h2>
+</hgroup>
 
 <article>
   <strong>{{ alasan }}</strong>
   <p>
-    Tidak ada email tambahan yang dikirim. Untuk mengirim ulang yang gagal,
-    gunakan tombol retry di halaman tracker.
+    No additional emails were sent. To resend the failed ones, use the retry
+    button on the tracker page.
   </p>
 </article>
 
-<fieldset role="group">
+<div class="baris-aksi-kanan">
+  <a href="/send" role="button" class="secondary outline">Back to Send</a>
   {% if request_id %}
-  <a href="/tracker/{{ request_id }}" role="button">Lihat tracker request ini</a>
+  <a href="/tracker/{{ request_id }}" role="button">View this request in the tracker</a>
   {% endif %}
-  <a href="/kirim" role="button" class="secondary">Kembali ke Kirim</a>
-</fieldset>
+</div>
 {% endblock %}

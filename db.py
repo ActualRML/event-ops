@@ -37,14 +37,51 @@ def list_categories() -> list[sqlite3.Row]:
         return conn.execute("SELECT id, nama FROM categories ORDER BY id").fetchall()
 
 
-def list_vendors(kategori: str | None = None, aktif_only: bool = True) -> list[sqlite3.Row]:
+def category_exists(nama: str) -> bool:
+    """The UNIQUE COLLATE NOCASE on the column is the real guard; this only
+    exists so the form can say which name collided instead of raising."""
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM categories WHERE nama = ? COLLATE NOCASE", (nama,)
+        ).fetchone()
+    return row is not None
+
+
+def create_category(nama: str) -> int:
+    """Insert one category. Returns the new id."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute("INSERT INTO categories (nama) VALUES (?)", (nama,))
+        conn.commit()
+        return cur.lastrowid
+
+
+def pola_cari(q: str) -> str:
+    """Wrap a search term for LIKE. The wildcards a user types are escaped so
+    they match literally — otherwise a stray _ silently matches any character."""
+    aman = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{aman}%"
+
+
+def list_vendors(kategori: str | None = None, q: str | None = None,
+                 aktif_only: bool = True) -> list[sqlite3.Row]:
     """Vendors with their categories flattened. Filter is by category membership,
-    so a vendor listed under several categories matches each of them."""
+    so a vendor listed under several categories matches each of them. q narrows
+    that further by name, PIC, or email; the two combine with AND."""
     clauses = []
     params: list[object] = []
 
     if aktif_only:
         clauses.append("aktif = 1")
+
+    if q and q.strip():
+        # LIKE is already case-insensitive for ASCII in SQLite, so no lower().
+        clauses.append(
+            r"""(nama_pt  LIKE ? ESCAPE '\'
+              OR pic_nama LIKE ? ESCAPE '\'
+              OR email    LIKE ? ESCAPE '\')"""
+        )
+        pola = pola_cari(q.strip())
+        params.extend([pola, pola, pola])
 
     if kategori:
         clauses.append(

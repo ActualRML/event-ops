@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="id">
+{# Pinned to light: the panel/page palette below is a light-theme palette, and
+   a demo should look the same on any machine. #}
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,13 +16,28 @@
     /* Inter overrides Pico's font stack; every other Pico default stands. */
     :root { --pico-font-family: "Inter", var(--pico-font-family-sans-serif); }
 
-    .badge { padding: .15rem .55rem; border-radius: 1rem; font-size: .75rem;
-             white-space: nowrap; color: #fff; }
+    /* Pins the focus ring to a flat 2px. Pico's own default is 0.125rem, which
+       rides its responsive root font size — 2.5px at desktop widths. Ties
+       Pico's :root on specificity and wins on source order. */
+    :root { --pico-outline-width: 2px; }
+
+    /* inline-block + nowrap: the badge never wraps and never grows past its
+       own cell. */
+    .badge { display: inline-block; max-width: 100%; padding: .15rem .55rem;
+             border-radius: 1rem; font-size: .75rem; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; color: #fff; }
     .badge-aktif, .badge-sent { background: #2e7d32; }
     .badge-nonaktif, .badge-draft { background: #78848f; }
     .badge-gagal, .badge-failed { background: #b3261e; }
     .badge-replied { background: #1565c0; }
     tr.nonaktif td { opacity: .45; }
+    /* Tracker list: the sent count and its badges on one row, vertically centred
+       so the inline-block badge stops riding above the text baseline.
+       Left-aligned on purpose — centring variable-width content in a column
+       makes every row start at a different x, which reads as ragged. The column
+       is sized to the content instead, so there is no empty gap to float in. */
+    .kirim-ringkas { display: flex; flex-wrap: wrap; align-items: center;
+                     gap: 4px 8px; }
 
     /* Metric cards — tracker detail. */
     .metrik { display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);
@@ -33,26 +50,347 @@
                     letter-spacing: .04em; color: var(--pico-muted-color); }
     .metrik-gagal .metrik-angka { color: #b3261e; }
     .metrik-terkirim .metrik-angka { color: #2e7d32; }
+    /* Status line under the cards. Supporting text at body size, not a headline
+       — the cards above already shout the numbers. The bold lead says which
+       state you are in, the rest reads as one plain sentence. */
+    .status-batch { margin: 0 0 12px; font-size: 14px; line-height: 1.5;
+                    color: var(--pico-muted-color); }
+    .status-batch strong { color: #3c3a38; font-weight: 600; }
+    .status-gagal { color: #b3261e; font-weight: 500; }
     @media (max-width: 720px) { .metrik { grid-template-columns: repeat(2, 1fr); } }
 
-    /* Tables: roomier rows, numbers right-aligned, supporting text muted. */
-    table td, table th { padding: .75rem .75rem; vertical-align: middle; }
-    table th { font-size: .8rem; text-transform: uppercase;
-               letter-spacing: .03em; color: var(--pico-muted-color); }
+    /* One table look everywhere. Column widths come from each table's own
+       colgroup; table-layout: fixed is what makes those widths bind. */
+    .tabel { table-layout: fixed; width: 100%; font-size: .9rem; }
+    .tabel td, .tabel th { padding: .35rem .6rem; vertical-align: middle;
+                           overflow-wrap: break-word; }
+    /* Outer columns flush with the panel gutter: without this the first
+       column's text sits .6rem right of the heading above it, and the last
+       column stops .6rem short of the primary button's right edge. */
+    .tabel th:first-child, .tabel td:first-child { padding-left: 0; }
+    .tabel th:last-child, .tabel td:last-child { padding-right: 0; }
+    .tabel th { font-size: .72rem; text-transform: uppercase;
+                letter-spacing: .04em; color: var(--pico-muted-color);
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .angka { text-align: right; font-variant-numeric: tabular-nums; }
-    .redup { color: var(--pico-muted-color); font-size: .85rem; }
-    .kosong { color: var(--pico-muted-color); font-style: italic;
-              padding-block: 1.5rem; }
+    /* Single-token values (emails) have no break opportunity, so they either
+       break mid-word or push the row taller. Clip instead; the full value is
+       on the cell's title attribute. */
+    .sel-teks { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The three-category vendor wraps to two lines here by design; tighter
+       leading keeps that row close to the height of its neighbours. */
+    .sel-kategori { line-height: 1.2; }
+    .redup { color: var(--pico-muted-color); font-size: .85em; }
+    /* Scoped past .tabel td so the empty-state row keeps its breathing room. */
+    .kosong { color: var(--pico-muted-color); font-style: italic; }
+    .tabel td.kosong, p.kosong { padding-block: 1.5rem; }
 
     /* A multi-line SMTP error would blow the row height apart; the full text
        stays in the title attribute. */
-    .error-sel { max-width: 22rem; }
     .error-sel span { display: block; overflow: hidden; white-space: nowrap;
                       text-overflow: ellipsis; color: #b3261e; font-size: .8rem; }
 
-    nav a[aria-current="page"] { font-weight: 600; color: var(--pico-primary);
-                                 text-decoration: underline;
-                                 text-underline-offset: .35rem; }
+    /* Row actions: side by side, identical width, quieter than the page's
+       primary button. The flex basis sits on the children of .aksi-grup — one
+       is an <a>, the other a <form> — so both boxes measure the same and the
+       two columns of buttons line up down the table. */
+    .aksi { text-align: right; }
+    .aksi-grup { display: flex; justify-content: flex-end; align-items: center;
+                 gap: .25rem; flex-wrap: nowrap; }
+    /* Equal halves of whatever the cell gives, capped at 6rem: the pair can
+       never total more than the cell, so it cannot spill into the next
+       column. At aksi = 18% each button gets 96px, 86px of it text — the
+       widest label, "Nonaktif", measures 46px. */
+    .aksi-grup > * { flex: 1 1 0; min-width: 0; max-width: 6rem; margin: 0; }
+    /* Two-class selector so Pico's own button font-size cannot outrank it —
+       at Pico's 1rem the label needs ~92px and truncates. */
+    .aksi-grup .btn-mini { display: block; width: 100%; margin: 0;
+                           padding: .2rem .25rem; font-size: .72rem;
+                           line-height: 1.5; white-space: nowrap;
+                           text-align: center; overflow: hidden;
+                           text-overflow: ellipsis; }
+    /* Level 3: muted by default, danger only on hover. */
+    .btn-mati { background: transparent; color: var(--pico-muted-color);
+                border-color: var(--pico-muted-border-color); }
+    .btn-mati:hover, .btn-mati:focus { background: transparent; color: #b3261e;
+                                       border-color: #b3261e; }
+
+    /* Select, closed state. The option list itself is drawn by the OS and
+       cannot be styled — deliberately not chased with a JS dropdown.
+       :not() matches Pico's own specificity for the native chevron. */
+    select:not([multiple]):not([size]) {
+      appearance: none; -webkit-appearance: none;
+      font-size: .9rem; line-height: 1.5;
+      padding-block: .45rem; padding-inline: .7rem 2.1rem;
+      background-color: #fff;
+      border: 1px solid #e4e7eb; border-radius: 8px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right .7rem center;
+      background-size: 14px 14px;
+    }
+
+    /* Admin-tool density. 14px/1.4 = 19.6 + 12 padding + 2 border = 34px. */
+    .form-rapat :is(input:not([type="checkbox"]):not([type="radio"]),
+                    textarea, select) {
+      font-size: 14px; line-height: 1.4; padding: 6px 10px;
+      --pico-form-element-spacing-vertical: 6px;
+      --pico-form-element-spacing-horizontal: 10px;
+      margin-top: 4px; margin-bottom: 0;
+    }
+    .form-rapat :is(input:not([type="checkbox"]):not([type="radio"]),
+                    select) { height: 34px; }
+    /* Beats the app-wide select rule, which carries a :not() pair. */
+    .form-rapat select:not([multiple]):not([size]) {
+      font-size: 14px; height: 34px; padding: 6px 32px 6px 10px;
+    }
+    .form-rapat textarea { height: auto; }
+
+    /* Field labels only — not the vendor picker's checkbox rows. */
+    .grid-isian > label, .form-vendor > label,
+    .form-kirim section > label, .form-kirim section > .grid > label {
+      font-size: 13px; line-height: 1.3; font-weight: 500; margin-bottom: 0;
+    }
+
+    .form-vendor legend { font-size: 13px; line-height: 1.3; font-weight: 500;
+                          margin-bottom: 0; }
+    .form-vendor > label, .form-vendor > fieldset,
+    .form-vendor > .grid-isian { margin-bottom: 12px; }
+    .form-vendor small { display: block; margin-top: 4px; font-size: 12px; }
+    .grid-isian { display: grid; grid-template-columns: 1fr 1fr;
+                  column-gap: 20px; row-gap: 12px; }
+    .grid-isian > label { margin-bottom: 0; }
+    /* One action-row treatment for the whole app, so no page ever falls back to
+       a stretched fieldset[role=group]. Data-entry forms put their submit on the
+       left gutter; page-level actions sit bottom-right with the primary last. */
+    .baris-aksi, .baris-aksi-kanan { display: flex; gap: 8px; }
+    .baris-aksi { justify-content: flex-start; }
+    .baris-aksi-kanan { justify-content: flex-end; margin-top: 20px; }
+    :is(.baris-aksi, .baris-aksi-kanan) > * { flex: 0 0 auto; margin: 0; }
+    /* Descendant, not child: tracker detail wraps its retry button in a form,
+       and the button is what needs the metrics. width: auto undoes Pico's
+       full-width button. */
+    :is(.baris-aksi, .baris-aksi-kanan) :is(button, [role="button"]) {
+      width: auto; margin: 0;
+      height: 34px; padding: 6px 14px; font-size: 14px; line-height: 1.4;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    /* Only the record forms pin Simpan to a fixed width; elsewhere the label
+       decides, so "Retry yang gagal" is not squeezed into 110px. */
+    .form-vendor .baris-aksi button[type="submit"] { width: 110px; }
+    /* Title only, no context line: the h2's own bottom margin would sit on top
+       of the 16px and open a gap where the helper line used to be. */
+    .judul-rapat { margin-bottom: 16px; }
+    .judul-rapat h2 { margin-bottom: 0; }
+
+    /* ---- Kirim ---------------------------------------------------------
+       Sections sit directly on the main panel: a heading and a hairline rule
+       instead of a nested panel's own border. */
+    /* Sections inside the panel: a heading over a hairline, sitting directly on
+       the panel instead of drawing a nested panel's border. Shared by Kirim,
+       Preview, and Tracker detail so the three read as one app.
+       Pico gives section a block margin; the rhythm comes from the h3's
+       padding-top and the action row's margin instead. */
+    main section { margin-bottom: 0; }
+    main section > h3 {
+      font-size: 13px; font-weight: 600; letter-spacing: .01em; color: #3c3a38;
+      border-top: 1px solid #eef0f3; padding-top: 16px; margin: 0 0 12px;
+    }
+    /* A field group is the whole <label> — the control it owns is nested
+       inside it, 4px below the label text via the shared .form-rapat
+       margin-top. 16px separates one group from the next, so every label
+       reads as belonging to the input below it. */
+    .form-kirim section > label,
+    .form-kirim section > .grid { margin-bottom: 16px; }
+    .form-kirim section > label:last-child,
+    .form-kirim section > .grid:last-child { margin-bottom: 0; }
+    .form-kirim section > .grid > label { margin-bottom: 0; }
+    .form-kirim small { display: block; margin-top: 4px; font-size: 12px; }
+
+    /* Vendor picker. The row is the <label>, so a click anywhere in it
+       toggles the checkbox natively — no JS handler needed for that. The
+       -8px inline margin lets the hover fill bleed to the panel gutter while
+       the text stays on it. */
+    /* label.baris-vendor, not .baris-vendor: Pico shrinks any label holding a
+       checkbox to fit-content, which would stop the divider and the hover fill
+       at the end of the text. */
+    .form-kirim label.baris-vendor {
+      display: flex; align-items: flex-start; gap: 10px; width: auto;
+      margin: 0 -8px; padding: 8px; cursor: pointer;
+      font-size: 14px; font-weight: 400;
+    }
+    .baris-vendor + .baris-vendor { border-top: 1px solid #eef0f3; }
+    .baris-vendor:hover { background: rgba(128, 138, 148, .08); }
+    /* 1px nudges the box onto the name's cap height. */
+    .baris-vendor input[type="checkbox"] { flex: 0 0 auto; margin: 1px 0 0; }
+    .vendor-isi { display: flex; flex-direction: column; gap: 2px;
+                  min-width: 0; }
+    .vendor-nama { line-height: 1.4; overflow-wrap: anywhere; }
+    .vendor-meta { font-size: 13px; line-height: 1.35;
+                   color: var(--pico-muted-color); overflow-wrap: anywhere; }
+
+    /* Status line under the list, not another list item. */
+    #counter { margin: 12px 0 0; font-size: 13px;
+               color: var(--pico-muted-color); }
+
+    /* Preview: the rendered email. The real thing is plain text, so the body
+       stays monospace — only the box around it is brought into line. */
+    .subjek { margin: 0 0 12px; font-size: 14px; line-height: 1.5;
+              overflow-wrap: anywhere; }
+    .pratinjau { margin: 0; background: #fbfcfd; border: 1px solid #e4e7eb;
+                 border-radius: 8px; padding: 12px 14px;
+                 font-size: 13px; line-height: 1.55;
+                 white-space: pre-wrap; overflow-x: auto; }
+
+    /* Categories read as a wrapping row of compact items, not a column. */
+    .kotak-kategori { display: flex; flex-wrap: wrap; gap: 6px 16px;
+                      margin-top: 4px; }
+    .kotak-kategori label { display: inline-flex; align-items: center; gap: 6px;
+                            margin: 0; font-size: 13px; font-weight: 400; }
+    .kotak-kategori input[type="checkbox"] { margin: 0; }
+
+    /* Filter select: capped so it does not span half the row. */
+    .filter-kategori { max-width: 240px; margin: 0; flex: 0 0 auto; }
+    /* Category and search sit on one line; the box takes what is left of the
+       grid cell, and the button never shrinks below its label. */
+    .baris-saring { display: flex; align-items: center; gap: 8px;
+                    min-width: 0; margin-bottom: 0; }
+    .kotak-cari { flex: 1 1 auto; min-width: 0; max-width: 320px; margin: 0; }
+    /* Results dim while a search is in flight. Only visible if SQLite is slow
+       enough to notice, which on this data it is not — it is there so a swap
+       never looks like a frozen table. */
+    #tabel-vendor.htmx-request { opacity: .5; transition: opacity .1s; }
+    /* Two page actions, right-aligned, primary last. */
+    .aksi-halaman { display: flex; justify-content: flex-end; gap: 8px; }
+    .aksi-halaman > * { flex: 0 0 auto; }
+    /* A single short field reads better capped than spanning the full panel. */
+    .form-sempit { max-width: 420px; }
+    .kategori-ada { margin-top: 20px; font-size: 13px; line-height: 1.5;
+                    color: var(--pico-muted-color); }
+
+    /* Header bar: a bordered region, not floating text. Neutral throughout —
+       the accent stays reserved for primary actions. */
+    /* Grey page, white surfaces. The main element is itself the panel, so no
+       page needs a wrapper and the measured rhythm above stays put. */
+    /* Sticky footer. The slack goes to the grey page via margin-top: auto on
+       the footer, not to the panel — a growing panel would reopen the empty
+       space under the last table row. Still normal flow, nothing is pinned:
+       on a long page there is no slack and the footer just follows content. */
+    body { background: #f6f7f9; min-height: 100dvh; display: flex;
+           flex-direction: column; }
+    body > :is(header, footer) { flex: 0 0 auto; }
+
+    .bilah { border-bottom: 1px solid var(--pico-muted-border-color);
+             background: #fff;
+             /* Pico gives body > header its own block padding; the bar sets
+                its own height instead. */
+             padding-block: 0; }
+    /* nav li carries 1rem of Pico padding on top of that — zeroed here so the
+       14px below is the whole story. */
+    /* Same width and gutter as the panel, so the brand lines up with the page
+       title below it. */
+    .bilah nav { --pico-nav-element-spacing-vertical: 0; padding-block: 14px;
+                 padding-inline: 24px;
+                 max-width: min(1200px, calc(100% - 48px));
+                 margin-inline: auto; }
+    .bilah ul { margin: 0; }
+    .bilah nav li { padding-block: 0; }
+    .merek { font-size: .78rem; font-weight: 600; letter-spacing: .07em;
+             text-transform: uppercase; color: var(--pico-muted-color); }
+
+    nav a.tautan-nav { color: var(--pico-muted-color); text-decoration: none;
+                       font-size: .85rem; font-weight: 500;
+                       padding: .4rem .75rem; border-radius: .4rem; }
+    nav a.tautan-nav:hover { color: var(--pico-color);
+                             background: rgba(128, 138, 148, .14); }
+    nav a.tautan-nav[aria-current="page"] {
+      color: var(--pico-color); font-weight: 600;
+      background: rgba(128, 138, 148, .16);
+      box-shadow: inset 0 -2px 0 0 var(--pico-color);
+    }
+
+    /* Vertical rhythm — the table is the content, so everything above it is
+       measured rather than left to Pico's defaults.
+       border 24 | title 4 | context 20 | controls 16 | table */
+    /* 10px of grey above the panel + 14px inside it = the same 24px from the
+       header border to the title as before. */
+    /* Panel: 24px gutter inside, 24px clear of the viewport outside, centred
+       and capped. min() keeps the 24px margin on narrow screens too. */
+    main.container { flex: 0 0 auto;
+                     background: #fff; border: 1px solid #e4e7eb;
+                     /* Felt, not seen: 1px offset, small blur, ~4% opacity. */
+                     box-shadow: 0 1px 2px rgba(16, 24, 40, .04),
+                                 0 2px 6px rgba(16, 24, 40, .03);
+                     /* bottom margin is the panel-to-footer gap; the footer
+                        itself has no top margin */
+                     border-radius: 10px; margin-block: 10px 12px;
+                     padding-block: 14px 32px;
+                     padding-inline: 24px;
+                     max-width: min(1200px, calc(100% - 48px));
+                     margin-inline: auto; }
+    main h2 { font-size: 1.5rem; line-height: 1.25; letter-spacing: -.02em;
+              color: #3c3a38; margin-top: 0; margin-bottom: 4px; }
+
+    /* Context line as chips: number carries the weight, label stays muted. */
+    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+             margin: 0; }
+    .chip { display: inline-flex; align-items: center; gap: .3rem;
+            background: #fff; border: 1px solid #e4e7eb; border-radius: 999px;
+            padding: 4px 10px; font-size: .8rem; line-height: 1.35;
+            color: var(--pico-muted-color); white-space: nowrap; }
+    .chip-angka { font-weight: 500; color: #3c3a38; }
+    main hgroup { margin-top: 0; margin-bottom: 20px; }
+    main hgroup > p { margin: 0; font-size: .875rem;
+                      color: var(--pico-muted-color); }
+    /* Only the controls row: a direct child of main. Nested .grid (the date
+       fields on Kirim) keeps Pico's spacing. */
+    main > .grid { margin-bottom: 16px; }
+    main > .grid form, main > .grid > div { margin-bottom: 0; }
+    /* Controls row: every control the same height as its neighbours, and the
+       same height as the Edit button in the table below (21.6 + 8 + 2 = 31.6px).
+       Only the vertical metrics are dialled down — font-size and the inline
+       padding stay put, so the two buttons keep the width they had.
+       height: auto is load-bearing — Pico gives input and [role=button] an
+       explicit height derived from 1rem, while select and button stay
+       content-sized, so the row stair-steps without it. */
+    main > .grid :is(select, input, button, [role="button"]) {
+      margin-bottom: 0; --pico-form-element-spacing-vertical: 4px;
+      padding-block: 4px; font-size: .9rem; line-height: 1.2;
+      height: auto;
+    }
+    main > table { margin-top: 0; }
+    /* Pages that end in a table close on the last row. The table's trailing
+       margin and the panel's bottom padding both go, and the row's own hairline
+       gives way to the panel border so the two don't stack 1px apart. */
+    main.container:has(> table.tabel:last-child) { padding-bottom: 0; }
+    main > table.tabel:last-child { margin-bottom: 0; }
+    main > table.tabel:last-child tbody tr:last-child :is(td, th) {
+      border-bottom: none;
+    }
+
+    /* Footer: a white bar closing the page the way .bilah opens it, same gutter,
+       in normal flow — it follows the content rather than pinning to the
+       viewport bottom. */
+    /* Border spans the viewport like the header's, but a step lighter than it,
+       and 9px of padding against the header's 14px — the header stays the
+       heavier of the two. */
+    /* padding-block: 0 kills Pico's body>footer spacing (16px top and bottom);
+       the inner wrapper is the only thing that adds height. margin-bottom: 0
+       so the white runs to the end of the document instead of stopping short
+       and leaving a grey strip under the bar. */
+    .kaki { margin-top: auto; margin-bottom: 0;
+            border-top: 1px solid #eef0f3;
+            background: #fff; padding-block: 0; }
+    .kaki-isi { max-width: min(1200px, calc(100% - 48px)); margin-inline: auto;
+                padding: 12px 24px;
+                display: flex; justify-content: space-between; gap: 1rem;
+                font-size: 12px; line-height: 1.4;
+                color: var(--pico-muted-color); }
+
+    /* The 2px ring is the whole focus treatment — no outline sitting outside it. */
+    :is(input, select, textarea):focus {
+      outline: none; outline-offset: 0;
+    }
 
     button:disabled, [role="button"]:disabled, button[disabled] {
       opacity: .45; cursor: not-allowed; filter: grayscale(35%);
@@ -60,22 +398,33 @@
   </style>
 </head>
 <body>
-  <nav class="container">
-    <ul>
-      <li><strong>Vendor RFQ Blast</strong></li>
-    </ul>
-    {# Active page from the request path — no extra context key to thread
-       through every handler. #}
-    {% set path = request.url.path if request else "" %}
-    <ul>
-      <li><a href="/vendors" {% if path.startswith("/vendors") %}aria-current="page"{% endif %}>Vendor</a></li>
-      <li><a href="/kirim" {% if path.startswith("/kirim") %}aria-current="page"{% endif %}>Kirim</a></li>
-      <li><a href="/tracker" {% if path.startswith("/tracker") %}aria-current="page"{% endif %}>Tracker</a></li>
-    </ul>
-  </nav>
+  <header class="bilah">
+    <nav class="container">
+      <ul>
+        <li class="merek">Vendor RFQ Blast</li>
+      </ul>
+      {# Active page from the request path — no extra context key to thread
+         through every handler. #}
+      {% set path = request.url.path if request else "" %}
+      <ul>
+        {# /categories has no tab of its own — it is reached from the Vendor page
+           and returns there, so Vendor stays lit. #}
+        <li><a class="tautan-nav" href="/vendors" {% if path.startswith("/vendors") or path.startswith("/categories") %}aria-current="page"{% endif %}>Vendors</a></li>
+        <li><a class="tautan-nav" href="/send" {% if path.startswith("/send") %}aria-current="page"{% endif %}>Send</a></li>
+        <li><a class="tautan-nav" href="/tracker" {% if path.startswith("/tracker") %}aria-current="page"{% endif %}>Tracker</a></li>
+      </ul>
+    </nav>
+  </header>
 
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="kaki">
+    <div class="kaki-isi">
+      <span>Vendor RFQ Blast · {{ tahun }}</span>
+      <span>Internal procurement tool</span>
+    </div>
+  </footer>
 </body>
 </html>

@@ -1,8 +1,12 @@
 {# Polled partial. It swaps itself, and the polling attributes disappear once
    the batch is done, which is what stops the poll. Counts come from SQL. #}
+{# The class still keys off the raw status — only the label is translated, so
+   the badge colours and the DB values stay untouched. #}
+{% set label_status = {"draft": "Pending", "sent": "Sent",
+                       "failed": "Failed", "replied": "Replied"} %}
 <div id="progress"
      {% if not p.selesai %}
-     hx-get="/kirim/{{ request_id }}/progress"
+     hx-get="/send/{{ request_id }}/progress"
      hx-trigger="every 1.5s"
      hx-swap="outerHTML"
      {% endif %}>
@@ -14,39 +18,51 @@
     </div>
     <div class="metrik-kartu metrik-terkirim">
       <div class="metrik-angka">{{ p.sent }}</div>
-      <div class="metrik-label">Terkirim</div>
+      <div class="metrik-label">Sent</div>
     </div>
     <div class="metrik-kartu metrik-gagal">
       <div class="metrik-angka">{{ p.failed }}</div>
-      <div class="metrik-label">Gagal</div>
+      <div class="metrik-label">Failed</div>
     </div>
   </div>
 
-  {% if p.selesai %}
-  <p>
-    <strong>Batch selesai.</strong>
-    {{ p.sent }} dari {{ p.total }} email terkirim{% if p.failed %}, {{ p.failed }} gagal{% endif %}.
-    <a href="/tracker">Lihat semua request</a>
+  {# Both states share one shape — a bold lead, then the counts — so the line
+     reads the same way whether the batch is running or done. No link back to
+     /tracker: the page already has that button under the table. #}
+  <p class="status-batch">
+    {% if p.selesai %}
+    <strong>Batch complete.</strong>
+    {{ p.sent }} of {{ p.total }} email{{ "s" if p.total != 1 }} sent{% if p.failed %},
+    <span class="status-gagal">{{ p.failed }} failed</span>{% endif %}.
+    {% else %}
+    <strong>Sending…</strong>
+    {{ p.sent }} of {{ p.total }} sent{% if p.failed %},
+    <span class="status-gagal">{{ p.failed }} failed</span>{% endif %}{% if p.draft %},
+    {{ p.draft }} pending{% endif %}.
+    {% endif %}
   </p>
-  {% else %}
-  <p>
-    <strong>{{ p.sent }} dari {{ p.total }} terkirim</strong>
-    {% if p.failed %} · <span class="badge badge-gagal">{{ p.failed }} gagal</span>{% endif %}
-    {% if p.draft %} · {{ p.draft }} menunggu{% endif %}
-  </p>
-  {% endif %}
 
   <progress value="{{ p.sent + p.failed }}" max="{{ p.total or 1 }}"></progress>
 
-  <table>
+  <table class="tabel">
+    <colgroup>
+      {# Status takes 3% off the reason column: the word labels need more room than
+         the raw statuses did, and the reason truncates at any width anyway. #}
+      <col style="width: 20%">
+      <col style="width: 13%">
+      <col style="width: 22%">
+      <col style="width: 12%">
+      <col style="width: 16%">
+      <col style="width: 17%">
+    </colgroup>
     <thead>
       <tr>
-        <th>Nama PT</th>
-        <th>Kategori</th>
-        <th>Email tujuan</th>
+        <th>Company</th>
+        <th>Category</th>
+        <th>Recipient</th>
         <th>Status</th>
-        <th>Terkirim</th>
-        <th>Error</th>
+        <th>Sent at</th>
+        <th>Failure reason</th>
       </tr>
     </thead>
     <tbody>
@@ -54,22 +70,21 @@
       <tr>
         <td><strong>{{ r.nama_pt }}</strong></td>
         <td>{{ r.kategori or "—" }}</td>
-        <td class="redup">{{ r.email_tujuan }}</td>
-        <td>
-          <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
-        </td>
-        <td class="redup">{{ r.sent_at or "—" }}</td>
-        {# One line in the cell, whole SMTP error in the tooltip. #}
+        <td class="redup sel-teks" title="{{ r.email_tujuan }}">{{ r.email_tujuan }}</td>
+        <td><span class="badge badge-{{ r.status }}">{{ label_status.get(r.status, r.status) }}</span></td>
+        <td class="redup sel-teks">{{ r.sent_at or "—" }}</td>
+        {# Plain English in the cell, whole raw SMTP error in the tooltip so a
+           developer can still see exactly what the server said. #}
         <td class="error-sel">
           {% if r.error_msg %}
-          <span title="{{ r.error_msg }}">{{ r.error_msg.splitlines()[0] }}</span>
+          <span title="{{ r.error_msg }}">{{ r.error_msg | error_message }}</span>
           {% endif %}
         </td>
       </tr>
       {% else %}
       <tr>
         <td colspan="6" class="kosong">
-          Belum ada baris outbox untuk request ini.
+          No outbox rows for this request yet.
         </td>
       </tr>
       {% endfor %}
@@ -78,6 +93,6 @@
 
   {# Only once the batch is done; mid-batch a zero here would read as a promise. #}
   {% if p.selesai and not p.failed %}
-  <p class="redup">Tidak ada kegagalan di batch ini — semua vendor terkirim tanpa error.</p>
+  <p class="redup">No failures in this batch — every vendor was sent without error.</p>
   {% endif %}
 </div>

@@ -1,30 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Kirim — Vendor RFQ Blast{% endblock %}
+{% block title %}Send — Vendor RFQ Blast{% endblock %}
 
 {% block content %}
-<hgroup>
-  <h2>Kirim RFQ</h2>
-  <p>Langkah 1 dari 2 · isi brief acara, lalu pilih vendor dari {{ categories|length }} kategori.</p>
+<hgroup class="judul-rapat">
+  <h2>Send RFQ</h2>
 </hgroup>
 
 {% if errors %}
 <article>
-  <strong>Belum bisa lanjut ke preview.</strong> Periksa isian yang ditandai di bawah.
+  <strong>Cannot continue to preview.</strong> Check the fields flagged below.
   {% if errors.vendor %}<br>{{ errors.vendor }}{% endif %}
 </article>
 {% endif %}
 
-<form id="form-kirim" method="post" action="/kirim/preview">
-  {# Template edits made on the preview screen, carried back through Kembali so
-     the next preview starts from them. Empty means the file defaults apply. #}
-  <input type="hidden" name="subject_template" value="{{ templat.subject }}">
-  <input type="hidden" name="body_template" value="{{ templat.body }}">
-
-  <article>
-    <header><strong>Brief acara</strong></header>
+{# form-rapat carries the shared input sizing; form-kirim the grouping and the
+   vendor picker, both scoped to this page. #}
+<form id="form-kirim" method="post" action="/send/preview" class="form-rapat form-kirim">
+  {# No template fields ride along: the preview screen no longer edits them, so
+     the routes always fall back to the files in email_templates/. #}
+  <section>
+    <h3>Event brief</h3>
 
     <label>
-      Judul acara
+      Event title
       <input name="judul_acara" value="{{ brief.judul_acara }}"
              {% if errors.judul_acara %}aria-invalid="true"{% endif %}>
       {% if errors.judul_acara %}<small>{{ errors.judul_acara }}</small>{% endif %}
@@ -32,13 +30,13 @@
 
     <div class="grid">
       <label>
-        Tanggal acara
+        Event date
         <input type="date" name="tanggal_acara" value="{{ brief.tanggal_acara }}"
                {% if errors.tanggal_acara %}aria-invalid="true"{% endif %}>
         {% if errors.tanggal_acara %}<small>{{ errors.tanggal_acara }}</small>{% endif %}
       </label>
       <label>
-        Deadline penawaran
+        Quote deadline
         <input type="date" name="deadline" value="{{ brief.deadline }}"
                {% if errors.deadline %}aria-invalid="true"{% endif %}>
         {% if errors.deadline %}<small>{{ errors.deadline }}</small>{% endif %}
@@ -46,30 +44,30 @@
     </div>
 
     <label>
-      Lokasi
+      Location
       <input name="lokasi" value="{{ brief.lokasi }}">
     </label>
 
     <label>
-      Kebutuhan
+      Requirements
       <textarea name="kebutuhan" rows="3"
                 {% if errors.kebutuhan %}aria-invalid="true"{% endif %}>{{ brief.kebutuhan }}</textarea>
       {% if errors.kebutuhan %}<small>{{ errors.kebutuhan }}</small>{% endif %}
     </label>
 
     <label>
-      Nama pengirim
+      Sender name
       <input name="pengirim_nama" value="{{ brief.pengirim_nama }}">
     </label>
-  </article>
+  </section>
 
-  <article>
-    <header><strong>Pilih vendor</strong></header>
+  <section>
+    <h3>Select vendors</h3>
 
     <label>
-      Kategori
+      Category
       <select id="kategori" name="category_id"
-              hx-get="/kirim/vendors"
+              hx-get="/send/vendors"
               hx-target="#daftar-vendor"
               hx-include="#kategori, #terpilih">
         {% for c in categories %}
@@ -91,9 +89,11 @@
     </div>
 
     <p id="counter" aria-live="polite"></p>
-  </article>
+  </section>
 
-  <button type="submit">Lanjut ke preview</button>
+  <div class="baris-aksi-kanan">
+    <button type="submit">Continue to preview</button>
+  </div>
 </form>
 
 <script>
@@ -134,9 +134,22 @@
     });
 
     document.getElementById('counter').textContent =
-      dipilih.length + ' vendor dipilih dari ' + kategori.size + ' kategori';
+      dipilih.length + (dipilih.length === 1 ? ' vendor' : ' vendors')
+      + ' selected from ' + kategori.size
+      + (kategori.size === 1 ? ' category' : ' categories');
   }
 
   hitungUlang();
+
+  // Clicking anywhere in a date field opens the calendar, not just the small
+  // icon at its right edge. showPicker needs a user gesture and this click is
+  // one; browsers without showPicker still work through the icon.
+  document.querySelectorAll('#form-kirim input[type="date"]').forEach(function (input) {
+    input.addEventListener('click', function () {
+      if (typeof input.showPicker !== 'function') return;
+      // Already open (e.g. the click landed on the icon) throws InvalidStateError.
+      try { input.showPicker(); } catch (e) { /* ignore */ }
+    });
+  });
 </script>
 {% endblock %}

@@ -2,19 +2,22 @@
    the hidden container outside this partial is the source of truth, so a
    swap never destroys or double-submits the selection. #}
 {% for v in vendors %}
-<label>
+{# The <label> is the whole row, so clicking anywhere in it toggles the
+   checkbox — no click handler, and onchange still fires either way. #}
+<label class="baris-vendor">
   <input type="checkbox"
          data-vendor-id="{{ v.id }}"
          data-kategori="{{ v.kategori_ids or '' }}"
          onchange="toggleVendor(this)"
          {% if v.id in selected %}checked{% endif %}>
-  <strong>{{ v.nama_pt }}</strong>
-  — {{ v.pic_nama or "—" }}
-  <small>{{ v.email }}</small>
+  <span class="vendor-isi">
+    <span class="vendor-nama">{{ v.nama_pt }}</span>
+    <span class="vendor-meta">{{ v.pic_nama or "no PIC" }} · {{ v.email }}</span>
+  </span>
 </label>
 {% else %}
 <p class="kosong">
-  Tidak ada vendor aktif di kategori ini. Pilih kategori lain, atau aktifkan
-  vendornya lebih dulu di halaman Vendor.
+  No active vendors in this category. Pick another category, or activate one
+  first on the Vendors page.
 </p>
 {% endfor %}
