@@ -2,8 +2,10 @@
 
 import sqlite3
 from contextlib import closing, contextmanager
+from datetime import date
 
 import config
+import penomoran
 
 
 def get_conn() -> sqlite3.Connection:
@@ -344,6 +346,85 @@ def reset_failed_to_draft(request_id: int) -> int:
         )
         conn.commit()
         return cur.rowcount
+
+
+def next_nomor(conn: sqlite3.Connection, bulan: int, tahun: int) -> str:
+    """The next free nomor for tahun.
+
+    Takes the caller's connection so the read sits inside the transaction that
+    consumes it. The sequence is derived rather than stored: the highest number
+    already issued this year, plus one. Rows from other years never enter the
+    max, so the count restarts at 001 in January.
+    """
+    rows = conn.execute(
+        "SELECT nomor FROM spk WHERE nomor LIKE ?", (penomoran.pola_tahun(tahun),)
+    ).fetchall()
+
+    tertinggi = max(
+        (penomoran.urut_dari(r["nomor"], tahun) for r in rows), default=0
+    )
+    return penomoran.format_nomor(tertinggi + 1, bulan, tahun)
+
+
+def create_spk(request_id: int, vendor_id: int, harga: int,
+               lingkup_kerja: str, termin: str) -> int:
+    """Issue one SPK. Returns the new id.
+
+    BEGIN IMMEDIATE takes the write lock before the sequence is read, so the
+    read and the insert that consumes it are one transaction — two SPK issued
+    at the same moment cannot claim the same nomor. UNIQUE(nomor) is the
+    backstop.
+
+    tanggal_terbit is passed in rather than defaulted by SQLite, and the same
+    date supplies the month and year of the nomor — one reading of the clock,
+    so the printed date and the number can never disagree.
+
+    A second SPK for the same (request_id, vendor_id) raises IntegrityError.
+    Re-issuing goes through update_spk; it is never a new row.
+    """
+    terbit = date.today()
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        nomor = next_nomor(conn, terbit.month, terbit.year)
+        cur = conn.execute(
+            """INSERT INTO spk (request_id, vendor_id, nomor, harga,
+                                lingkup_kerja, termin, tanggal_terbit)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (request_id, vendor_id, nomor, harga, lingkup_kerja, termin,
+             terbit.isoformat()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_spk(request_id: int, vendor_id: int) -> sqlite3.Row | None:
+    """The SPK for one vendor on one request, or None. The pair is unique,
+    so this is at most one row."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM spk WHERE request_id = ? AND vendor_id = ?",
+            (request_id, vendor_id),
+        ).fetchone()
+
+
+def update_spk(spk_id: int, harga: int, lingkup_kerja: str, termin: str) -> None:
+    """Re-issue: the editable fields only. nomor and tanggal_terbit are left
+    out of the statement deliberately — a document reprinted next month still
+    carries the number and date it was issued under."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "UPDATE spk SET harga = ?, lingkup_kerja = ?, termin = ? WHERE id = ?",
+            (harga, lingkup_kerja, termin, spk_id),
+        )
+        conn.commit()
+
+
+def list_spk_for_request(request_id: int) -> list[sqlite3.Row]:
+    """Every SPK issued against one request, in issue order."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM spk WHERE request_id = ? ORDER BY id", (request_id,)
+        ).fetchall()
 
 
 def set_vendor_categories(vendor_id: int, category_ids) -> None:

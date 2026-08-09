@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}SPK — {{ vendor.nama_pt }}{% endblock %}
+
+{% block content %}
+<hgroup class="judul-rapat">
+  <h2>{% if spk %}Edit SPK{% else %}Issue SPK{% endif %}</h2>
+  {% if spk %}
+  {# Nomor and issue date sit above the form, not in it: neither can be
+     changed here, and a reprint next month carries these same values. #}
+  <p class="chips">
+    <span class="chip">nomor <span class="chip-angka">{{ spk.nomor }}</span></span>
+    <span class="chip">issued <span class="chip-angka">{{ spk.tanggal_terbit | date }}</span></span>
+  </p>
+  {% endif %}
+</hgroup>
+
+{% if hambatan %}
+{# Blocks the form outright. These come from the vendor and the request, so
+   there is nothing on this page that could fix them. #}
+<article class="peringatan">
+  <strong>This SPK cannot be issued yet.</strong>
+  Missing: {{ hambatan | join(", ") }}.
+  Fill it in on the vendor record, then come back.
+</article>
+{% elif errors %}
+<article>
+  <strong>Could not save.</strong> Check the fields flagged below.
+</article>
+{% endif %}
+
+{# System values. Read-only on purpose — they are what the document prints,
+   and they are edited where they live, not here. #}
+<dl class="konteks">
+  <div><dt>Vendor</dt><dd>{{ vendor.nama_pt }}</dd></div>
+  <div><dt>PIC</dt><dd>{{ vendor.pic_nama or "—" }}</dd></div>
+  <div><dt>Event</dt><dd>{{ permintaan.judul_acara }}</dd></div>
+  <div><dt>Event date</dt><dd>{{ permintaan.tanggal_acara | date or "—" }}</dd></div>
+  <div><dt>Location</dt><dd>{{ permintaan.lokasi or "—" }}</dd></div>
+</dl>
+
+<form method="post" action="/tracker/{{ request_id }}/spk/{{ vendor_id }}"
+      class="form-rapat form-vendor">
+  <label>
+    Amount (rupiah)
+    {# Not type="number": "Rp 15.000.000" is what gets pasted in, and the
+       browser would silently blank a value the server can read fine. #}
+    <input name="harga" value="{{ v.harga }}" autofocus
+           inputmode="numeric" placeholder="15.000.000"
+           {% if errors.harga %}aria-invalid="true"{% endif %}>
+    {% if errors.harga %}<small>{{ errors.harga }}</small>
+    {% else %}<small class="redup">Whole rupiah. “15000000”, “15.000.000” and
+      “Rp 15.000.000” all work.</small>{% endif %}
+  </label>
+
+  <label>
+    Scope of work
+    <textarea name="lingkup_kerja" rows="3"
+              placeholder="e.g. Sewa tenda roder 10x20 m, termasuk pemasangan"
+              {% if errors.lingkup_kerja %}aria-invalid="true"{% endif %}>{{ v.lingkup_kerja }}</textarea>
+    {% if errors.lingkup_kerja %}<small>{{ errors.lingkup_kerja }}</small>{% endif %}
+  </label>
+
+  <label>
+    Payment terms
+    <input name="termin" value="{{ v.termin }}"
+           placeholder="e.g. 50% DP, 50% H+7"
+           {% if errors.termin %}aria-invalid="true"{% endif %}>
+    {% if errors.termin %}<small>{{ errors.termin }}</small>{% endif %}
+  </label>
+
+  <div class="baris-aksi">
+    <button type="submit" {% if hambatan %}disabled{% endif %}>
+      {{ "Perbarui" if spk else "Terbitkan SPK" }}
+    </button>
+    <a href="/tracker/{{ request_id }}" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+{% endblock %}

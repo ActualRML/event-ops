@@ -19,11 +19,14 @@ quality. Optimize for something demonstrable, not something maintainable.
 Dependencies: fastapi, uvicorn[standard], jinja2, python-multipart,
 python-dotenv, aiosmtplib. Nothing else without asking.
 
-UI text and routes in English. Database columns, form field names, and the
-contents of email_templates/ stay Indonesian — the emails go to Indonesian
-vendors, and renderer.format_tanggal exists to keep dates in the message body
-Indonesian while the interface uses format_date. Code, comments, and commit
-messages in English.
+Language:
+- UI labels, page titles, and button text: Indonesian.
+- Route paths, column names, function names, variables, comments, and commit
+  messages: English.
+
+email_templates/ stays Indonesian — the emails go to Indonesian vendors.
+renderer.format_tanggal renders dates in Indonesian for the message body;
+format_date and format_datetime render them for the interface.
 
 ## Flow
 brief → select category + check vendors (cross-category) → preview →
@@ -98,3 +101,27 @@ After each phase, report in this format only:
 - Blockers or decisions needing my input
 
 No summaries, no next-step suggestions, no restating what was asked.
+
+## Dependency addition
+python-docx — document generation. No other new dependencies.
+
+## Schema addition
+
+spk(id PK, request_id FK, vendor_id FK, nomor TEXT UNIQUE,
+    harga INTEGER, lingkup_kerja TEXT, termin TEXT,
+    tanggal_terbit TEXT, created_at TEXT,
+    UNIQUE(request_id, vendor_id))
+
+Rationale: the SPK must be re-downloadable with the same nomor. Storing
+it makes the number stable and gives procurement a record of what was
+issued.
+
+## Additional invariants
+
+12. Nomor surat is allocated once, at row insert, inside a transaction.
+    It must never be recomputed on download — a document reprinted next
+    month must carry its original number.
+13. harga stored as INTEGER rupiah, no decimals, no formatting. Display
+    formatting and terbilang are presentation concerns.
+14. One SPK per (request_id, vendor_id). Re-issuing means editing the
+    existing row, not creating a second.

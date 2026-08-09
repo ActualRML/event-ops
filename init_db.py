@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = BASE_DIR / "db" / "schema.sql"
 SEED_PATH = BASE_DIR / "db" / "seed.sql"
 
-TABLES = ["categories", "vendors", "vendor_categories", "requests", "outbox"]
+TABLES = ["categories", "vendors", "vendor_categories", "requests", "outbox", "spk"]
 
 
 def main() -> int:

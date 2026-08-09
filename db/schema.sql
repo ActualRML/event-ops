@@ -51,10 +51,27 @@ CREATE TABLE outbox (
     UNIQUE (request_id, vendor_id)
 );
 
+-- One work order per vendor per request. nomor is allocated at insert and
+-- never recomputed, so a document reprinted later carries its original number.
+-- harga is whole rupiah; formatting and terbilang happen on the way out.
+CREATE TABLE spk (
+    id             INTEGER PRIMARY KEY,
+    request_id     INTEGER NOT NULL REFERENCES requests(id),
+    vendor_id      INTEGER NOT NULL REFERENCES vendors(id),
+    nomor          TEXT NOT NULL UNIQUE,
+    harga          INTEGER NOT NULL DEFAULT 0 CHECK (harga >= 0),
+    lingkup_kerja  TEXT,
+    termin         TEXT,
+    tanggal_terbit TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+    created_at     TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (request_id, vendor_id)
+);
+
 CREATE INDEX idx_vendor_categories_category ON vendor_categories(category_id);
 CREATE INDEX idx_outbox_request ON outbox(request_id);
 CREATE INDEX idx_outbox_status ON outbox(status);
 CREATE INDEX idx_vendors_aktif ON vendors(aktif);
+CREATE INDEX idx_spk_request ON spk(request_id);
 
 -- One row per vendor; categories flattened into a single display string.
 -- Vendors with no category still appear, with kategori NULL.

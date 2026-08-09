@@ -268,6 +268,29 @@
     .kategori-ada { margin-top: 20px; font-size: 13px; line-height: 1.5;
                     color: var(--pico-muted-color); }
 
+    /* SPK form: system values above the editable ones. Same surface as the
+       email preview, so "this is shown to you, not asked of you" reads the
+       same way on both pages. Label above value, no input affordances. */
+    .konteks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+               gap: 10px 20px; margin: 0 0 20px;
+               background: #fbfcfd; border: 1px solid #e4e7eb;
+               border-radius: 8px; padding: 12px 14px; }
+    /* The event title and location run long — they take the full width. */
+    .konteks > div:nth-child(3), .konteks > div:nth-child(5) { grid-column: 1 / -1; }
+    .konteks dt { font-size: 11px; text-transform: uppercase;
+                  letter-spacing: .04em; color: var(--pico-muted-color); }
+    .konteks dd { margin: 2px 0 0; font-size: 14px; line-height: 1.45;
+                  overflow-wrap: anywhere; }
+    @media (max-width: 720px) { .konteks { grid-template-columns: 1fr; } }
+    /* Blocking notice, distinct from the neutral validation article. */
+    .peringatan { border-left: 3px solid #b3261e; }
+    /* Nomor above the row's buttons: long, and it truncates rather than
+       forcing the column wider. */
+    .spk-nomor { display: block; margin-bottom: 3px; font-size: .72rem; }
+    /* Alone in its cell, so it may use the whole width — the 6rem cap exists
+       for the paired buttons elsewhere. */
+    .aksi-grup .btn-spk { max-width: none; }
+
     /* Header bar: a bordered region, not floating text. Neutral throughout —
        the accent stays reserved for primary actions. */
     /* Grey page, white surfaces. The main element is itself the panel, so no

@@ -46,14 +46,15 @@
 
   <table class="tabel">
     <colgroup>
-      {# Status takes 3% off the reason column: the word labels need more room than
-         the raw statuses did, and the reason truncates at any width anyway. #}
-      <col style="width: 20%">
-      <col style="width: 13%">
-      <col style="width: 22%">
-      <col style="width: 12%">
-      <col style="width: 16%">
+      {# The SPK column takes its 16% off recipient, sent-at and reason — all
+         three truncate at any width, none of the remaining ones do. #}
+      <col style="width: 19%">
+      <col style="width: 11%">
       <col style="width: 17%">
+      <col style="width: 11%">
+      <col style="width: 13%">
+      <col style="width: 13%">
+      <col style="width: 16%">
     </colgroup>
     <thead>
       <tr>
@@ -63,6 +64,7 @@
         <th>Status</th>
         <th>Sent at</th>
         <th>Failure reason</th>
+        <th>SPK</th>
       </tr>
     </thead>
     <tbody>
@@ -80,10 +82,29 @@
           <span title="{{ r.error_msg }}">{{ r.error_msg | error_message }}</span>
           {% endif %}
         </td>
+        {# Offered on every row whatever the status: a vendor whose email
+           bounced can still win the job over the phone. #}
+        <td class="aksi">
+          {% set s = spk.get(r.vendor_id) %}
+          {% if s %}
+          <span class="redup sel-teks spk-nomor" title="{{ s.nomor }}">{{ s.nomor }}</span>
+          <div class="aksi-grup">
+            <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}" role="button"
+               class="secondary outline btn-mini">Edit</a>
+            <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}/unduh"
+               role="button" class="secondary outline btn-mini">Unduh</a>
+          </div>
+          {% else %}
+          <div class="aksi-grup">
+            <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}" role="button"
+               class="secondary outline btn-mini btn-spk">Terbitkan SPK</a>
+          </div>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" class="kosong">
+        <td colspan="7" class="kosong">
           No outbox rows for this request yet.
         </td>
       </tr>

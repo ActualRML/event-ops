@@ -8,14 +8,16 @@ from datetime import date
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import config
 import db
+import dokumen
 import mailer
 import renderer
+import terbilang
 
 app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -652,6 +654,9 @@ async def kirim_progress(request: Request, request_id: int):
             "request_id": request_id,
             "p": db.progress(request_id),
             "rows": db.list_outbox_rows(request_id),
+            # The poll swaps the whole table, so the SPK column has to come
+            # with it — otherwise the last swap of a batch wipes the actions.
+            "spk": peta_spk(request_id),
         },
     )
 
@@ -675,6 +680,7 @@ async def tracker_detail(request: Request, request_id: int):
             "request_id": request_id,
             "p": db.progress(request_id),
             "rows": db.list_outbox_rows(request_id),
+            "spk": peta_spk(request_id),
         },
     )
 
@@ -689,6 +695,174 @@ async def tracker_retry(request_id: int):
     db.reset_failed_to_draft(request_id)
     jadwalkan(request_id)
     return RedirectResponse(f"/tracker/{request_id}", status_code=303)
+
+
+# --- SPK ---------------------------------------------------------------
+
+MEDIA_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+# Grouped digits: 15.000.000 or 15,000,000, but not 15.5 — a stray decimal
+# must be rejected, not silently multiplied by ten.
+HARGA_BERKELOMPOK = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
+
+
+def parse_harga(raw: str) -> tuple[int | None, str | None]:
+    """Read what procurement actually types. "15000000", "15.000.000" and
+    "Rp 15.000.000" all mean the same amount; the separators are stripped and
+    the value is stored as whole rupiah."""
+    teks = str(raw).strip()
+    if not teks:
+        return None, "Amount is required."
+
+    # Currency prefix and any spacing inside the digits.
+    teks = re.sub(r"^rp\.?\s*", "", teks, flags=re.IGNORECASE)
+    teks = re.sub(r"[\s ]", "", teks)
+
+    if HARGA_BERKELOMPOK.match(teks):
+        teks = teks.replace(".", "").replace(",", "")
+    elif not teks.isdigit():
+        return None, "Enter a whole rupiah amount, e.g. 15.000.000."
+
+    nilai = int(teks)
+    if nilai <= 0:
+        return None, "Amount must be greater than zero."
+    # The document spells the amount out, and terbilang stops here.
+    if nilai > terbilang.MAKS:
+        return None, f"Amount is above the maximum of {tampil_harga(terbilang.MAKS)}."
+    return nilai, None
+
+
+def tampil_harga(harga: int) -> str:
+    """Grouped digits for the input box — the same shape parse_harga reads."""
+    return f"{harga:,}".replace(",", ".")
+
+
+def slug(teks: str) -> str:
+    """Vendor name as a filename part."""
+    bersih = re.sub(r"[^a-z0-9]+", "-", str(teks).lower()).strip("-")
+    return bersih or "vendor"
+
+
+def nama_berkas_spk(nomor: str, nama_pt: str) -> str:
+    """The slashes in a nomor are path separators, so they become dashes."""
+    return f"SPK-{str(nomor).replace('/', '-')}-{slug(nama_pt)}.docx"
+
+
+def peta_spk(request_id: int) -> dict:
+    """vendor_id -> SPK row, for the per-vendor action in the outbox table."""
+    return {r["vendor_id"]: r for r in db.list_spk_for_request(request_id)}
+
+
+def muat_spk(request_id: int, vendor_id: int):
+    """The rows every SPK route needs. The vendor must belong to this request:
+    the action is offered per outbox row, so a hand-typed pair that was never
+    invited is a 404, not a new orphan SPK."""
+    permintaan = db.request_detail(request_id)
+    if permintaan is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    vendor = db.get_vendor(vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    if not any(r["vendor_id"] == vendor_id for r in db.list_outbox_rows(request_id)):
+        raise HTTPException(status_code=404, detail="Vendor is not part of this request")
+
+    return permintaan, vendor, db.get_spk(request_id, vendor_id)
+
+
+def spk_context(request_id: int, vendor_id: int, permintaan, vendor, spk,
+                v: dict, errors: dict) -> dict:
+    return {
+        "request_id": request_id,
+        "vendor_id": vendor_id,
+        "permintaan": permintaan,
+        "vendor": vendor,
+        "spk": spk,
+        "v": v,
+        "errors": errors,
+        # What dokumen.py would raise on. Checked here so it never can.
+        "hambatan": dokumen.periksa_konteks(vendor, permintaan),
+    }
+
+
+@app.get("/tracker/{request_id}/spk/{vendor_id}")
+async def spk_form(request: Request, request_id: int, vendor_id: int):
+    permintaan, vendor, spk = muat_spk(request_id, vendor_id)
+    v = {
+        "harga": tampil_harga(spk["harga"]) if spk else "",
+        "lingkup_kerja": (spk["lingkup_kerja"] or "") if spk else "",
+        "termin": (spk["termin"] or "") if spk else "",
+    }
+    return templates.TemplateResponse(
+        request, "spk_form.html",
+        spk_context(request_id, vendor_id, permintaan, vendor, spk, v, {}),
+    )
+
+
+@app.post("/tracker/{request_id}/spk/{vendor_id}")
+async def spk_save(
+    request: Request,
+    request_id: int,
+    vendor_id: int,
+    harga: str = Form(""),
+    lingkup_kerja: str = Form(""),
+    termin: str = Form(""),
+):
+    permintaan, vendor, spk = muat_spk(request_id, vendor_id)
+    v = {"harga": harga, "lingkup_kerja": lingkup_kerja, "termin": termin}
+
+    errors = {}
+    nilai, pesan = parse_harga(harga)
+    if pesan:
+        errors["harga"] = pesan
+    if not lingkup_kerja.strip():
+        errors["lingkup_kerja"] = "Scope of work is required."
+    if not termin.strip():
+        errors["termin"] = "Payment terms are required."
+
+    konteks = spk_context(request_id, vendor_id, permintaan, vendor, spk, v, errors)
+    if errors or konteks["hambatan"]:
+        return templates.TemplateResponse(
+            request, "spk_form.html", konteks, status_code=422
+        )
+
+    if spk is None:
+        try:
+            db.create_spk(request_id, vendor_id, nilai,
+                          lingkup_kerja.strip(), termin.strip())
+        except sqlite3.IntegrityError:
+            # UNIQUE(request_id, vendor_id): a second submit got here first.
+            # One SPK per pair, so the later one edits it rather than failing.
+            lama = db.get_spk(request_id, vendor_id)
+            db.update_spk(lama["id"], nilai, lingkup_kerja.strip(), termin.strip())
+    else:
+        db.update_spk(spk["id"], nilai, lingkup_kerja.strip(), termin.strip())
+
+    return RedirectResponse(f"/tracker/{request_id}", status_code=303)
+
+
+@app.get("/tracker/{request_id}/spk/{vendor_id}/unduh")
+async def spk_unduh(request_id: int, vendor_id: int):
+    permintaan, vendor, spk = muat_spk(request_id, vendor_id)
+    if spk is None:
+        raise HTTPException(status_code=404, detail="No SPK issued for this vendor")
+
+    # A vendor edited after issue can have lost its area or PIC. The form says
+    # which; generating here would raise instead.
+    if dokumen.periksa_konteks(vendor, permintaan):
+        return RedirectResponse(f"/tracker/{request_id}/spk/{vendor_id}",
+                                status_code=303)
+
+    # Rebuilt from the stored row on every download — nothing is cached, so an
+    # updated amount is in the file the moment it is saved.
+    aliran = dokumen.buat_spk_docx(spk, vendor, permintaan)
+    nama = nama_berkas_spk(spk["nomor"], vendor["nama_pt"])
+    return StreamingResponse(
+        aliran,
+        media_type=MEDIA_DOCX,
+        headers={"Content-Disposition": f'attachment; filename="{nama}"'},
+    )
 
 
 @app.post("/vendors/{vendor_id}/toggle-active")
