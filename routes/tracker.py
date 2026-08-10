@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 
 import db
 import tasks
-from deps import peta_spk, templates
+from deps import templates
 
 router = APIRouter()
 
@@ -29,7 +29,7 @@ async def tracker_detail(request: Request, request_id: int):
             "request_id": request_id,
             "p": db.progress(request_id),
             "rows": db.list_outbox_rows(request_id),
-            "spk": peta_spk(request_id),
+            "spk": db.spk_by_vendor(request_id),
         },
     )
 

@@ -5,8 +5,6 @@ what would otherwise force one router to import another."""
 
 from fastapi.templating import Jinja2Templates
 
-import db
-
 templates = Jinja2Templates(directory="templates")
 
 
@@ -20,8 +18,3 @@ def parse_ids(raw: list[str]) -> list[int]:
         except ValueError:
             continue
     return ids
-
-
-def peta_spk(request_id: int) -> dict:
-    """vendor_id -> SPK row, for the per-vendor action in the outbox table."""
-    return {r["vendor_id"]: r for r in db.list_spk_for_request(request_id)}

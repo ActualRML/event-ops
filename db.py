@@ -427,6 +427,11 @@ def list_spk_for_request(request_id: int) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def spk_by_vendor(request_id: int) -> dict:
+    """vendor_id -> SPK row, for the per-vendor action in the outbox table."""
+    return {r["vendor_id"]: r for r in list_spk_for_request(request_id)}
+
+
 def set_vendor_categories(vendor_id: int, category_ids) -> None:
     """Replace a vendor's category set. Delete and insert share one
     transaction so the vendor is never briefly uncategorised."""

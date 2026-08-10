@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 import db
 import renderer
 import tasks
-from deps import parse_ids, peta_spk, templates
+from deps import parse_ids, templates
 
 router = APIRouter()
 
@@ -320,6 +320,6 @@ async def send_progress(request: Request, request_id: int):
             "rows": db.list_outbox_rows(request_id),
             # The poll swaps the whole table, so the SPK column has to come
             # with it — otherwise the last swap of a batch wipes the actions.
-            "spk": peta_spk(request_id),
+            "spk": db.spk_by_vendor(request_id),
         },
     )
