@@ -8,7 +8,7 @@
   {# Nomor and issue date sit above the form, not in it: neither can be
      changed here, and a reprint next month carries these same values. #}
   <p class="chips">
-    <span class="chip">nomor <span class="chip-angka">{{ spk.nomor }}</span></span>
+    <span class="chip">number <span class="chip-angka">{{ spk.nomor }}</span></span>
     <span class="chip">issued <span class="chip-angka">{{ spk.tanggal_terbit | date }}</span></span>
   </p>
   {% endif %}
@@ -70,7 +70,7 @@
 
   <div class="baris-aksi">
     <button type="submit" {% if hambatan %}disabled{% endif %}>
-      {{ "Perbarui" if spk else "Terbitkan SPK" }}
+      {{ "Update" if spk else "Issue SPK" }}
     </button>
     <a href="/tracker/{{ request_id }}" role="button" class="secondary outline">Cancel</a>
   </div>

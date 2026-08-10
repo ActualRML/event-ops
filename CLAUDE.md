@@ -12,27 +12,63 @@ quality. Optimize for something demonstrable, not something maintainable.
 - Python 3.12, FastAPI, Jinja2, HTMX
 - SQLite, raw SQL via sqlite3 stdlib. No ORM.
 - aiosmtplib, Gmail SMTP + app password
-- Pico.css v2 via CDN. Custom CSS limited to status badges and metric
-  cards. No Tailwind, no React, no build step.
+- Pico.css v2 and HTMX 2.0.4, both via CDN. All custom CSS is one
+  <style> block in base.html — no .css files, no Tailwind, no React,
+  no build step.
 - Config via .env
 
 Dependencies: fastapi, uvicorn[standard], jinja2, python-multipart,
-python-dotenv, aiosmtplib. Nothing else without asking.
+python-dotenv, aiosmtplib, python-docx. Nothing else without asking —
+everything else in requirements.txt is transitive (lxml from
+python-docx; httptools, watchfiles, websockets, PyYAML from
+uvicorn[standard]).
 
-Language:
-- UI labels, page titles, and button text: Indonesian.
-- Route paths, column names, function names, variables, comments, and commit
-  messages: English.
+Language — the split is by audience, not by file:
 
-email_templates/ stays Indonesian — the emails go to Indonesian vendors.
-renderer.format_tanggal renders dates in Indonesian for the message body;
-format_date and format_datetime render them for the interface.
+- Anything a vendor reads is Indonesian: email_templates/, the rendered
+  subject and body, and the generated SPK .docx. These are outbound
+  correspondence and formal documents; never translate them.
+- Anything only procurement staff reads is English: UI labels, page
+  titles, button text, table headers, empty states, validation messages.
+  (Originally specified as Indonesian; the UI was translated in full and
+  the spec, not the code, was what was out of date.)
+- Indonesian survives in the interface only as domain vocabulary with no
+  English equivalent — "SPK" is the document's actual name — and as
+  placeholder examples in fields whose contents get printed verbatim
+  into the Indonesian document (scope of work, payment terms).
+- Routes and comments: English. Commit messages: English.
+- Identifiers: English for new code. Existing schema columns and the
+  domain helpers around them are Indonesian (nama_pt, judul_acara,
+  lingkup_kerja, terbilang, buat_spk_docx) — leave them; renaming a
+  column to translate it buys nothing and breaks every query.
+
+## Presentation split
+
+renderer.py is vendor-facing, tampilan.py is staff-facing. Both format
+the same values; they differ only in which audience reads the result.
+
+- renderer.format_tanggal → Indonesian long form, for the message body
+  only. renderer.render_email is the single render path: preview,
+  dispatch and subject pre-rendering all call it (invariant 9).
+- tampilan.format_date and tampilan.format_datetime → English long form,
+  for the interface only. Both parse through renderer.ke_tanggal, so the
+  two languages accept and reject exactly the same inputs and only the
+  month table differs.
+- tampilan.pesan_error maps an aiosmtplib exception name to one plain
+  English line for the tracker's failure column. Translation happens on
+  display, not on write: the raw "ExceptionName: detail" string stays in
+  outbox.error_msg, so rows that already failed pick up reworded
+  messages with no migration, and the full server response is still
+  available in the cell's tooltip.
+
+All three of tampilan's functions are registered as Jinja filters
+(date, datetime, error_message) and are used by templates only.
 
 ## Flow
 brief → select category + check vendors (cross-category) → preview →
 send (batched, with progress) → tracker
 
-Three pages: Vendor (CRUD), Kirim, Tracker.
+Three pages: Vendors (CRUD, /vendors), Send (/send), Tracker (/tracker).
 
 ## Schema
 
@@ -52,6 +88,22 @@ outbox(id PK, request_id FK, vendor_id FK, email_tujuan, subject,
        error_msg, message_id, sent_at, created_at,
        UNIQUE(request_id, vendor_id))
 
+spk(id PK, request_id FK, vendor_id FK, nomor TEXT NOT NULL UNIQUE,
+    harga INTEGER NOT NULL CHECK(harga > 0),
+    lingkup_kerja TEXT, termin TEXT,
+    tanggal_terbit TEXT NOT NULL DEFAULT (date('now','localtime')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(request_id, vendor_id))
+
+v_vendor_lengkap — one row per vendor, with the vendor's categories
+flattened into a single comma-joined `kategori` string. LEFT JOIN, so a
+vendor with no category still appears with kategori NULL. Load-bearing:
+the vendor list, the send-page picker and the outbox/tracker queries all
+read the view rather than re-joining vendor_categories.
+
+Indexes: idx_vendor_categories_category, idx_outbox_request,
+idx_outbox_status, idx_vendors_aktif, idx_spk_request.
+
 Rationale:
 - vendor↔category is many-to-many; tent vendors commonly also supply
   chairs and staging
@@ -60,14 +112,24 @@ Rationale:
 - outbox.message_id is groundwork for future reply-matching
 - subject_template separate from body: subject must be unique per vendor
   or Gmail collapses the batch into one thread
+- spk is stored rather than generated on demand: the SPK must be
+  re-downloadable with the same nomor. Storing it makes the number
+  stable and gives procurement a record of what was issued.
+
+harga was CHECK(harga >= 0) DEFAULT 0, which admitted a zero-value SPK
+the validator in main.parse_harga already rejected. The constraint now
+matches the validator. SQLite cannot alter a CHECK in place, so the live
+db/rfq.db still carries the old one — it picks the new constraint up on
+the next rebuild from schema.sql. No existing row violates it.
 
 ## Invariants
 
 1. PRAGMA foreign_keys = ON on EVERY new connection, not once at init.
 2. DRY_RUN defaults True. When true, never open an SMTP connection —
    log to/subject/body only.
-3. Preview screen is mandatory before send. Send button must never
-   dispatch directly.
+3. The UI must expose no path that sends without passing through the
+   preview screen. The send route is not independently authenticated —
+   this is a demo MVP with no auth layer.
 4. SEND_DELAY_SECONDS between sends.
 5. A failed send never halts the batch — record status='failed' +
    error_msg, continue.
@@ -78,8 +140,16 @@ Rationale:
 8. Double-send prevented at three layers: disabled button, server-side
    check, UNIQUE(request_id, vendor_id).
 9. Preview and send must call the identical render function.
-10. All SQL lives in db.py. No queries in handlers.
+10. All application queries live in db.py. Route handlers contain no SQL.
+    Standalone CLI scripts may run schema and maintenance SQL directly.
 11. status='sent' never reverts to 'draft'. Retry only from 'failed'.
+12. Nomor surat is allocated once, at row insert, inside a transaction.
+    It must never be recomputed on download — a document reprinted next
+    month must carry its original number.
+13. harga stored as INTEGER rupiah, no decimals, no formatting. Display
+    formatting and terbilang are presentation concerns.
+14. One SPK per (request_id, vendor_id). Re-issuing means editing the
+    existing row, not creating a second.
 
 ## Out of scope — do not build
 auth/login · automated reply parsing · quotations table · price
@@ -89,39 +159,20 @@ integration · Docker · CI · comprehensive tests
 If you believe one is necessary, state the reason first. Do not build it.
 
 ## Working style
-- One phase at a time. Stop at each checkpoint and await confirmation.
+Feature work is complete. What remains is maintenance on a working
+system, not phased delivery.
+
+- Changes are targeted and scoped to what was asked. Do not widen a
+  request into adjacent cleanup, and do not narrow it either — if part
+  of it is blocked, do the rest and say what was left.
 - Small functions, no premature abstraction.
-- No UI polish before phase 5 is complete.
-- Do not create files outside the current phase's spec.
+- Propose structural changes — renames, new modules, schema edits,
+  refactors — rather than applying them. Describe the change and what it
+  touches, then wait.
 
 ## Reporting
-After each phase, report in this format only:
-- Files created/modified — paths only
-- Deviations from spec + one-line rationale each
+- What changed — paths, and what each edit did
+- Deviations from what was asked + one-line rationale each
+- What was verified, and how — commands run and their actual result.
+  Distinguish what was checked from what was assumed.
 - Blockers or decisions needing my input
-
-No summaries, no next-step suggestions, no restating what was asked.
-
-## Dependency addition
-python-docx — document generation. No other new dependencies.
-
-## Schema addition
-
-spk(id PK, request_id FK, vendor_id FK, nomor TEXT UNIQUE,
-    harga INTEGER, lingkup_kerja TEXT, termin TEXT,
-    tanggal_terbit TEXT, created_at TEXT,
-    UNIQUE(request_id, vendor_id))
-
-Rationale: the SPK must be re-downloadable with the same nomor. Storing
-it makes the number stable and gives procurement a record of what was
-issued.
-
-## Additional invariants
-
-12. Nomor surat is allocated once, at row insert, inside a transaction.
-    It must never be recomputed on download — a document reprinted next
-    month must carry its original number.
-13. harga stored as INTEGER rupiah, no decimals, no formatting. Display
-    formatting and terbilang are presentation concerns.
-14. One SPK per (request_id, vendor_id). Re-issuing means editing the
-    existing row, not creating a second.

@@ -2,7 +2,7 @@
    filter swap. Same template both ways, so the two can never drift.
    The chips ride along only on a swap — the full page already renders them up
    in the header, and emitting them here too would duplicate the id. #}
-{% if oob %}{% include "_vendor_chips.html" %}{% endif %}
+{% if oob %}{% include "_vendor_stats.html" %}{% endif %}
 
 <table class="tabel" id="tabel-vendor">
   {# nama_pt takes 4% off email: the longest seeded name measures 199px and

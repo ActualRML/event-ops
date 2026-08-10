@@ -1,4 +1,4 @@
-"""CLI smoke test: python test_email.py <email>"""
+"""CLI smoke test: python cek_email.py <email>"""
 
 import asyncio
 import sys
@@ -17,7 +17,7 @@ Terima kasih.
 
 async def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: python test_email.py <email>")
+        print("Usage: python cek_email.py <email>")
         return 1
 
     ok, detail = await kirim_email(sys.argv[1], SUBJECT, BODY)

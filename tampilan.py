@@ -1,0 +1,98 @@
+"""Interface presentation. Everything here is registered as a Jinja filter and
+used by the templates only — never by the email body, which stays Indonesian
+and goes through renderer.format_tanggal."""
+
+from datetime import datetime
+
+import renderer
+
+MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+
+
+def format_date(value) -> str:
+    """ISO date to English long form: 2026-09-18 -> 18 September 2026.
+    Interface only — never use this for the email body."""
+    # The ISO parse is renderer's: both formatters accept the same inputs and
+    # pass the same non-dates through, so only the month table differs.
+    hasil = renderer.ke_tanggal(value)
+    if hasil is None:
+        return ""
+    if isinstance(hasil, str):
+        return hasil
+    return f"{hasil.day} {MONTHS[hasil.month - 1]} {hasil.year}"
+
+
+def format_datetime(value) -> str:
+    """Timestamp to English long form with the clock:
+    2026-08-04 18:16:21 -> 4 August 2026, 18:16.
+    Seconds are dropped — nobody reads a batch log to the second. Anything that
+    is not a parseable timestamp passes through untouched, same as format_date,
+    so a stray value is never swallowed."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        waktu = value
+    else:
+        teks = str(value).strip()
+        if not teks:
+            return ""
+        try:
+            waktu = datetime.fromisoformat(teks)
+        except ValueError:
+            return teks
+    return f"{waktu.day} {MONTHS[waktu.month - 1]} {waktu.year}, {waktu:%H:%M}"
+
+
+# Plain labels for the tracker, keyed by exception class name. Names are
+# aiosmtplib's, not smtplib's — the two differ (aiosmtplib has SMTPNotSupported
+# where smtplib has SMTPNotSupportedError, and it adds its own TimeoutError).
+# Short on purpose: the cell is narrow and clips, and the raw exception is
+# still one hover away.
+PESAN_ERROR = {
+    "SMTPSenderRefused": "Sender address rejected",
+    "SMTPAuthenticationError": "Email login failed",
+    "SMTPConnectError": "Could not reach mail server",
+    "SMTPConnectResponseError": "Could not reach mail server",
+    "SMTPServerDisconnected": "Connection to server dropped",
+    "SMTPTimeoutError": "Mail server did not respond",
+    "SMTPConnectTimeoutError": "Mail server did not respond",
+    "SMTPReadTimeoutError": "Mail server did not respond",
+    "TimeoutError": "Mail server did not respond",
+    "SMTPDataError": "Message rejected by server",
+    "SMTPNotSupported": "Server refused the connection mode",
+    "SMTPHeloError": "Server refused the initial handshake",
+    "SMTPResponseException": "Mail server refused the request",
+    "SMTPException": "Send failed",
+    "gaierror": "Mail server address not found",
+    "ConnectionRefusedError": "Connection refused by server",
+}
+
+# Both the batch form and the single-recipient form reach us; Gmail raises the
+# plural wrapping the singular, but the singular can surface on its own.
+DITOLAK_PENERIMA = ("SMTPRecipientsRefused", "SMTPRecipientRefused")
+
+
+def pesan_error(error_msg) -> str:
+    """One human line for an outbox failure, from the stored
+    'ExceptionName: detail' string. Translating on display rather than on write
+    keeps the raw error in the database — rows that already failed get the new
+    wording too, with no migration."""
+    if not error_msg:
+        return ""
+
+    nama, _, detail = str(error_msg).partition(":")
+    nama = nama.strip()
+
+    # The overwhelmingly common failure, and the only one procurement can act
+    # on themselves, so it is split by what the server actually objected to.
+    if nama in DITOLAK_PENERIMA:
+        if "553" in detail or "not a valid" in detail:
+            return "Invalid email address"
+        if "550" in detail or "does not exist" in detail:
+            return "Email address not found"
+        return "Rejected by recipient server"
+
+    return PESAN_ERROR.get(nama, "Send failed")

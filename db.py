@@ -33,7 +33,7 @@ def transaksi(conn: sqlite3.Connection | None = None):
 
 
 def list_categories() -> list[sqlite3.Row]:
-    """All categories in seed order. Kirim opens on the first one, so id order
+    """All categories in seed order. Send opens on the first one, so id order
     keeps Tenda in front rather than whatever sorts first alphabetically."""
     with closing(get_conn()) as conn:
         return conn.execute("SELECT id, nama FROM categories ORDER BY id").fetchall()

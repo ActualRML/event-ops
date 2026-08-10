@@ -91,13 +91,13 @@
           <div class="aksi-grup">
             <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}" role="button"
                class="secondary outline btn-mini">Edit</a>
-            <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}/unduh"
-               role="button" class="secondary outline btn-mini">Unduh</a>
+            <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}/download"
+               role="button" class="secondary outline btn-mini">Download</a>
           </div>
           {% else %}
           <div class="aksi-grup">
             <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}" role="button"
-               class="secondary outline btn-mini btn-spk">Terbitkan SPK</a>
+               class="secondary outline btn-mini btn-spk">Issue SPK</a>
           </div>
           {% endif %}
         </td>

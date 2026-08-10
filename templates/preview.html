@@ -76,12 +76,12 @@
        the POST is on its way. Disabling happens after submit so the request
        still carries formaction. #}
     <button type="submit" id="tombol-kirim" formaction="/send/dispatch"
-            onclick="kunciKirim(this)">Send now</button>
+            onclick="lockSend(this)">Send now</button>
   </div>
 </form>
 
 <script>
-  function kunciKirim(tombol) {
+  function lockSend(tombol) {
     setTimeout(function () {
       tombol.disabled = true;
       tombol.textContent = 'Sending…';

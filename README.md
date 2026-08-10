@@ -88,7 +88,7 @@ memang mau mengirim sungguhan.
 Cek kredensial SMTP tanpa menjalankan aplikasi:
 
 ```bash
-python test_email.py            # kirim satu email percobaan
+python cek_email.py             # kirim satu email percobaan
 python config.py                # tampilkan konfigurasi yang terbaca
 python init_db.py               # reset database ke kondisi awal
 ```

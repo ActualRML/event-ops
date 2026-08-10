@@ -59,7 +59,7 @@ CREATE TABLE spk (
     request_id     INTEGER NOT NULL REFERENCES requests(id),
     vendor_id      INTEGER NOT NULL REFERENCES vendors(id),
     nomor          TEXT NOT NULL UNIQUE,
-    harga          INTEGER NOT NULL DEFAULT 0 CHECK (harga >= 0),
+    harga          INTEGER NOT NULL CHECK (harga > 0),
     lingkup_kerja  TEXT,
     termin         TEXT,
     tanggal_terbit TEXT NOT NULL DEFAULT (date('now', 'localtime')),

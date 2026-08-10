@@ -17,19 +17,20 @@ import db
 import dokumen
 import mailer
 import renderer
+import tampilan
 import terbilang
 
 app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
-# Presentation only. These are the English formatters — renderer.format_tanggal
-# stays Indonesian and is reserved for the email body.
-templates.env.filters["date"] = renderer.format_date
+# Presentation only, all from tampilan — renderer.format_tanggal stays
+# Indonesian and is reserved for the email body.
+templates.env.filters["date"] = tampilan.format_date
 # created_at carries a clock time, which the date-only filter cannot parse.
-templates.env.filters["datetime"] = renderer.format_datetime
+templates.env.filters["datetime"] = tampilan.format_datetime
 # Raw SMTP exceptions are unreadable for the procurement staff who use this.
-templates.env.filters["error_message"] = renderer.pesan_error
+templates.env.filters["error_message"] = tampilan.pesan_error
 # Footer year. Read at startup — a demo restarts far more often than a year turns.
 templates.env.globals["tahun"] = date.today().year
 
@@ -134,7 +135,7 @@ async def vendor_list(request: Request, category: str = "", q: str = ""):
             and request.headers.get("HX-History-Restore-Request") != "true")
     return templates.TemplateResponse(
         request,
-        "_vendor_tabel.html" if htmx else "vendors.html",
+        "_vendor_table.html" if htmx else "vendors.html",
         {
             # Inactive vendors stay listed here; aktif_only is for the send path.
             "vendors": db.list_vendors(
@@ -347,10 +348,10 @@ def validasi_brief(brief: dict, vendor_ids: list[int]) -> dict:
     return errors
 
 
-def kirim_context(request: Request, brief: dict, selected_ids: list[int],
+def send_context(request: Request, brief: dict, selected_ids: list[int],
                   category_id: int | None, errors: dict,
                   templat: dict | None = None) -> dict:
-    """Context for kirim.html. Rebuilds the hidden container from selected_ids
+    """Context for send.html. Rebuilds the hidden container from selected_ids
     so a validation bounce never costs the user their selection. templat holds
     the edited email templates when there are any; empty strings mean the file
     defaults still apply."""
@@ -377,15 +378,15 @@ def kirim_context(request: Request, brief: dict, selected_ids: list[int],
 
 
 @app.get("/send")
-async def kirim(request: Request):
+async def send_form(request: Request):
     # Selection starts empty; it lives in the page, not the session.
     return templates.TemplateResponse(
-        request, "kirim.html", kirim_context(request, dict(BRIEF_KOSONG), [], None, {})
+        request, "send.html", send_context(request, dict(BRIEF_KOSONG), [], None, {})
     )
 
 
 @app.post("/send/back")
-async def kirim_kembali(
+async def send_back(
     request: Request,
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
@@ -411,8 +412,8 @@ async def kirim_kembali(
 
     return templates.TemplateResponse(
         request,
-        "kirim.html",
-        kirim_context(
+        "send.html",
+        send_context(
             request, brief, ids, kategori[0] if kategori else None, {},
             {"subject": subject_template, "body": body_template},
         ),
@@ -420,7 +421,7 @@ async def kirim_kembali(
 
 
 @app.post("/send/preview")
-async def kirim_preview(
+async def send_preview(
     request: Request,
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
@@ -451,8 +452,8 @@ async def kirim_preview(
     if errors:
         return templates.TemplateResponse(
             request,
-            "kirim.html",
-            kirim_context(
+            "send.html",
+            send_context(
                 request, brief, ids, kategori_aktif, errors,
                 {"subject": subject_template, "body": body_template},
             ),
@@ -497,7 +498,7 @@ async def kirim_preview(
 
 
 @app.get("/send/vendors")
-async def kirim_vendors(
+async def send_vendors(
     request: Request,
     category_id: int,
     vendor_ids: list[str] = Query([]),
@@ -506,7 +507,7 @@ async def kirim_vendors(
     already picked under another category renders checked here too."""
     return templates.TemplateResponse(
         request,
-        "_vendor_list.html",
+        "_send_pick_vendor.html",
         {
             "vendors": db.list_vendors_by_category(category_id),
             "selected": set(parse_ids(vendor_ids)),
@@ -523,7 +524,7 @@ def brief_dari_request(row) -> dict:
 
 
 # Keeps background tasks from being garbage collected mid-batch.
-TUGAS_KIRIM: set[asyncio.Task] = set()
+SEND_TASKS: set[asyncio.Task] = set()
 
 
 async def dispatch_batch(request_id: int) -> None:
@@ -556,14 +557,14 @@ async def dispatch_batch(request_id: int) -> None:
             await asyncio.sleep(config.SEND_DELAY_SECONDS)
 
 
-def jadwalkan(request_id: int) -> None:
+def schedule_batch(request_id: int) -> None:
     tugas = asyncio.create_task(dispatch_batch(request_id))
-    TUGAS_KIRIM.add(tugas)
-    tugas.add_done_callback(TUGAS_KIRIM.discard)
+    SEND_TASKS.add(tugas)
+    tugas.add_done_callback(SEND_TASKS.discard)
 
 
 @app.post("/send/dispatch")
-async def kirim_send(
+async def send_dispatch(
     request: Request,
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
@@ -592,18 +593,18 @@ async def kirim_send(
             raise HTTPException(status_code=404, detail="Request not found")
         if db.request_has_dispatched(existing):
             return templates.TemplateResponse(
-                request, "kirim_ditolak.html",
+                request, "send_rejected.html",
                 {"request_id": existing, "alasan": "This request has already been sent."},
                 status_code=409,
             )
-        jadwalkan(existing)
+        schedule_batch(existing)
         return RedirectResponse(f"/tracker/{existing}", status_code=303)
 
     errors = validasi_brief(brief, ids)
     if errors:
         return templates.TemplateResponse(
-            request, "kirim.html",
-            kirim_context(
+            request, "send.html",
+            send_context(
                 request, brief, ids, None, errors,
                 {"subject": subject_template, "body": body_template},
             ),
@@ -635,17 +636,17 @@ async def kirim_send(
     except sqlite3.IntegrityError as e:
         # Layer 3: UNIQUE(request_id, vendor_id).
         return templates.TemplateResponse(
-            request, "kirim_ditolak.html",
+            request, "send_rejected.html",
             {"request_id": None, "alasan": f"Duplicate outbox row rejected by the database: {e}"},
             status_code=409,
         )
 
-    jadwalkan(baru)
+    schedule_batch(baru)
     return RedirectResponse(f"/tracker/{baru}", status_code=303)
 
 
 @app.get("/send/{request_id}/progress")
-async def kirim_progress(request: Request, request_id: int):
+async def send_progress(request: Request, request_id: int):
     if db.request_detail(request_id) is None:
         raise HTTPException(status_code=404, detail="Request not found")
     return templates.TemplateResponse(
@@ -693,7 +694,7 @@ async def tracker_retry(request_id: int):
     # Only failed rows return to draft. Rows still draft from an interrupted
     # batch are picked up by the same dispatch.
     db.reset_failed_to_draft(request_id)
-    jadwalkan(request_id)
+    schedule_batch(request_id)
     return RedirectResponse(f"/tracker/{request_id}", status_code=303)
 
 
@@ -728,24 +729,9 @@ def parse_harga(raw: str) -> tuple[int | None, str | None]:
         return None, "Amount must be greater than zero."
     # The document spells the amount out, and terbilang stops here.
     if nilai > terbilang.MAKS:
-        return None, f"Amount is above the maximum of {tampil_harga(terbilang.MAKS)}."
+        maks = dokumen.format_rupiah(terbilang.MAKS, prefix=False)
+        return None, f"Amount is above the maximum of {maks}."
     return nilai, None
-
-
-def tampil_harga(harga: int) -> str:
-    """Grouped digits for the input box — the same shape parse_harga reads."""
-    return f"{harga:,}".replace(",", ".")
-
-
-def slug(teks: str) -> str:
-    """Vendor name as a filename part."""
-    bersih = re.sub(r"[^a-z0-9]+", "-", str(teks).lower()).strip("-")
-    return bersih or "vendor"
-
-
-def nama_berkas_spk(nomor: str, nama_pt: str) -> str:
-    """The slashes in a nomor are path separators, so they become dashes."""
-    return f"SPK-{str(nomor).replace('/', '-')}-{slug(nama_pt)}.docx"
 
 
 def peta_spk(request_id: int) -> dict:
@@ -790,7 +776,7 @@ def spk_context(request_id: int, vendor_id: int, permintaan, vendor, spk,
 async def spk_form(request: Request, request_id: int, vendor_id: int):
     permintaan, vendor, spk = muat_spk(request_id, vendor_id)
     v = {
-        "harga": tampil_harga(spk["harga"]) if spk else "",
+        "harga": dokumen.format_rupiah(spk["harga"], prefix=False) if spk else "",
         "lingkup_kerja": (spk["lingkup_kerja"] or "") if spk else "",
         "termin": (spk["termin"] or "") if spk else "",
     }
@@ -842,8 +828,8 @@ async def spk_save(
     return RedirectResponse(f"/tracker/{request_id}", status_code=303)
 
 
-@app.get("/tracker/{request_id}/spk/{vendor_id}/unduh")
-async def spk_unduh(request_id: int, vendor_id: int):
+@app.get("/tracker/{request_id}/spk/{vendor_id}/download")
+async def spk_download(request_id: int, vendor_id: int):
     permintaan, vendor, spk = muat_spk(request_id, vendor_id)
     if spk is None:
         raise HTTPException(status_code=404, detail="No SPK issued for this vendor")
@@ -857,7 +843,7 @@ async def spk_unduh(request_id: int, vendor_id: int):
     # Rebuilt from the stored row on every download — nothing is cached, so an
     # updated amount is in the file the moment it is saved.
     aliran = dokumen.buat_spk_docx(spk, vendor, permintaan)
-    nama = nama_berkas_spk(spk["nomor"], vendor["nama_pt"])
+    nama = dokumen.nama_berkas_spk(spk["nomor"], vendor["nama_pt"])
     return StreamingResponse(
         aliran,
         media_type=MEDIA_DOCX,

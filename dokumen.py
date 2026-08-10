@@ -1,6 +1,7 @@
 """SPK document generation. Builds the .docx in memory and hands back the
 stream — nothing here touches the filesystem."""
 
+import re
 from io import BytesIO
 
 from docx import Document
@@ -26,10 +27,25 @@ FONT_NAMA = "Times New Roman"
 FONT_UKURAN = Pt(11)
 
 
-def format_rupiah(harga: int) -> str:
-    """15000000 -> "Rp 15.000.000". Thousands separated with dots, the
-    Indonesian convention, and no decimals — harga is whole rupiah."""
-    return f"Rp {harga:,}".replace(",", ".")
+def format_rupiah(harga: int, prefix: bool = True) -> str:
+    """15000000 -> "Rp 15.000.000", or "15.000.000" without the prefix, which
+    is the shape the SPK form's input reads back. Thousands separated with
+    dots, the Indonesian convention, and no decimals — harga is whole rupiah."""
+    angka = f"{harga:,}".replace(",", ".")
+    return f"Rp {angka}" if prefix else angka
+
+
+def slug(teks: str) -> str:
+    """Vendor name as a filename part."""
+    bersih = re.sub(r"[^a-z0-9]+", "-", str(teks).lower()).strip("-")
+    return bersih or "vendor"
+
+
+def nama_berkas_spk(nomor: str, nama_pt: str) -> str:
+    """The document's filename. It lives here because it is a property of the
+    document, not of the route that happens to serve it — the slashes in a
+    nomor are path separators, so they become dashes."""
+    return f"SPK-{str(nomor).replace('/', '-')}-{slug(nama_pt)}.docx"
 
 
 # Everything buat_spk_docx needs that the SPK form does not itself collect.
