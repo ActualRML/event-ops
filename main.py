@@ -8,7 +8,7 @@ from datetime import date
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-import tampilan
+from core import tampilan
 from deps import templates
 from routes import send, spk, tracker, vendors
 

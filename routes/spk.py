@@ -7,8 +7,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 
 import db
-import dokumen
-import terbilang
+from core import dokumen
+from core import terbilang
 from deps import templates
 
 router = APIRouter()

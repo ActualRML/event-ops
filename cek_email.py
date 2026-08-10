@@ -3,7 +3,7 @@
 import asyncio
 import sys
 
-from mailer import kirim_email
+from core.mailer import kirim_email
 
 SUBJECT = "Test RFQ - Vendor RFQ Blast"
 BODY = """Halo,

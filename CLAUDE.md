@@ -45,10 +45,46 @@ Language — the split is by audience, not by file:
   lingkup_kerja, terbilang, buat_spk_docx) — leave them; renaming a
   column to translate it buys nothing and breaks every query.
 
+## Layout
+
+    main.py          app object, Jinja filters, static mount, router includes
+    deps.py          templates + parse_ids — what more than one router needs
+    tasks.py         SEND_TASKS, dispatch_batch, schedule_batch (phase B)
+    config.py        .env loading
+    db.py            all SQL
+    init_db.py       schema/seed CLI
+    cek_email.py     one-off send test CLI
+    core/            domain logic, no web layer
+      mailer.py      SMTP send, honours DRY_RUN
+      renderer.py    email subject/body rendering (vendor-facing)
+      tampilan.py    interface formatting + SMTP error labels (staff-facing)
+      dokumen.py     SPK .docx generation
+      terbilang.py   number to Indonesian words
+      penomoran.py   nomor surat formatting and sequence
+    routes/          one APIRouter per area
+      vendors.py     /, /vendors, /categories
+      send.py        /send and its subpaths
+      tracker.py     /tracker, detail, retry
+      spk.py         /tracker/{id}/spk/...
+    templates/  static/  email_templates/  db/
+
+Import direction is one-way. core/ may import config and other core
+modules, and nothing else from this project: never db, deps, tasks, or
+anything under routes/. Routers may import db, deps, tasks and core.
+Nothing imports main.
+
+Imports of core are absolute — `from core import renderer`, or
+`from core.terbilang import terbilang`. No relative imports.
+
+templates/, static/ and db/ are addressed CWD-relative, so the app is
+started from the project root and the uvicorn command is unchanged.
+core/renderer.py is the one exception: it resolves email_templates/ from
+__file__, and therefore climbs one level out of the package.
+
 ## Presentation split
 
-renderer.py is vendor-facing, tampilan.py is staff-facing. Both format
-the same values; they differ only in which audience reads the result.
+core/renderer.py is vendor-facing, core/tampilan.py is staff-facing. Both
+format the same values; they differ only in which audience reads the result.
 
 - renderer.format_tanggal → Indonesian long form, for the message body
   only. renderer.render_email is the single render path: preview,

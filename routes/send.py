@@ -8,7 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 import db
-import renderer
+from core import renderer
 import tasks
 from deps import parse_ids, templates
 

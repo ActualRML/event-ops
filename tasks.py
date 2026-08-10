@@ -6,8 +6,8 @@ import asyncio
 
 import config
 import db
-import mailer
-import renderer
+from core import mailer
+from core import renderer
 
 
 def brief_dari_request(row) -> dict:

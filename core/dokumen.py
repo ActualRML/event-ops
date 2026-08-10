@@ -11,8 +11,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
-import renderer
-from terbilang import terbilang
+from core import renderer
+from core.terbilang import terbilang
 
 # Letterhead. The one place these appear — change them here and every SPK
 # issued afterwards carries the new details.

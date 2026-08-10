@@ -8,7 +8,10 @@ from pathlib import Path
 
 from jinja2 import StrictUndefined, Template
 
-TEMPLATE_DIR = Path(__file__).resolve().parent / "email_templates"
+# email_templates/ sits at the project root, one level above this package.
+# The extra .parent is what the move into core/ cost — the directory itself
+# did not move.
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "email_templates"
 SUBJECT_FILE = TEMPLATE_DIR / "rfq_subject.txt"
 BODY_FILE = TEMPLATE_DIR / "rfq_default.txt"
 

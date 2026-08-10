@@ -4,7 +4,7 @@ and goes through renderer.format_tanggal."""
 
 from datetime import datetime
 
-import renderer
+from core import renderer
 
 MONTHS = [
     "January", "February", "March", "April", "May", "June",

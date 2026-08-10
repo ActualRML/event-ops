@@ -5,7 +5,7 @@ from contextlib import closing, contextmanager
 from datetime import date
 
 import config
-import penomoran
+from core import penomoran
 
 
 def get_conn() -> sqlite3.Connection:
