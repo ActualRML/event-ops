@@ -15,6 +15,9 @@ quality. Optimize for something demonstrable, not something maintainable.
 - Pico.css v2 and HTMX 2.0.4, both via CDN. All custom CSS is one
   <style> block in base.html — no .css files, no Tailwind, no React,
   no build step.
+- CSS class names are Indonesian by convention (.baris-vendor,
+  .metrik-kartu, .form-kirim). This is deliberate and uniform — do not
+  rename them piecemeal.
 - Config via .env
 
 Dependencies: fastapi, uvicorn[standard], jinja2, python-multipart,
@@ -63,6 +66,10 @@ the same values; they differ only in which audience reads the result.
 
 All three of tampilan's functions are registered as Jinja filters
 (date, datetime, error_message) and are used by templates only.
+
+mailer.kirim_email belongs to the mailer API, not the Send page family —
+it is also called by cek_email.py. The send_* rename covered the page's
+handlers, templates and context builder only; kirim_email keeps its name.
 
 ## Flow
 brief → select category + check vendors (cross-category) → preview →
