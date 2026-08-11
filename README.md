@@ -1,57 +1,75 @@
 # Event Ops
 
-Internal tool untuk tim procurement event organizer: kirim satu permintaan
-penawaran (RFQ) ke banyak vendor sekaligus, lalu pantau hasilnya per vendor.
+Internal tool untuk event organizer. Satu acara ditangani dari mencari vendor
+sampai hari-H: sebar RFQ ke banyak vendor sekaligus, terbitkan SPK untuk yang
+menang, lalu susun rundown acaranya. Ketiganya menggantung pada satu baris
+`requests` — satu acara, satu benang, tanpa menyalin data antar modul.
 
 ## Masalah
 
 Untuk satu acara, staf procurement mengirim RFQ ke vendor satu per satu lewat
-email. Untuk 25 vendor tenda, sound system, lighting, dan katering, itu berarti
-25 kali menyalin brief yang sama, mengganti nama PT dan nama PIC, lalu menekan
-kirim. Prosesnya memakan waktu, gampang salah tempel, dan setelah terkirim tidak
-ada catatan siapa saja yang sudah dihubungi — kalau ada yang terlewat, baru
-ketahuan saat vendor tidak membalas.
+email: 25 vendor berarti 25 kali menyalin brief yang sama dan mengganti nama PT
+dan nama PIC. Setelah terkirim tidak ada catatan siapa saja yang sudah
+dihubungi, SPK untuk vendor yang menang diketik ulang di Word, dan rundown
+hari-H hidup di spreadsheet terpisah yang jam-jamnya harus dihitung ulang
+manual setiap ada satu durasi berubah.
 
-## Solusi
+## Tiga modul
 
-Satu brief acara diisi sekali, vendor dipilih lewat checkbox (boleh lintas
-kategori — vendor tenda biasanya juga menyediakan kursi dan panggung), lalu
-sistem merender satu email personal per vendor dan mengirimnya berurutan.
+### 1. Vendor & RFQ blast
+
+Data vendor disimpan beserta kategorinya — tenda, sound system, lighting,
+katering, AC, genset — dan status aktif/nonaktif. Satu vendor boleh masuk
+beberapa kategori sekaligus, karena vendor tenda biasanya juga menyediakan
+kursi dan panggung.
+
+Brief acara diisi sekali, vendor dicentang lintas kategori, lalu sistem
+merender satu email personal per vendor. Preview wajib: tombol kirim tidak
+pernah mengirim langsung, email contoh selalu ditampilkan dulu. Pengiriman
+jalan di background dengan jeda antar email, dan satu email gagal dicatat
+sebagai `failed` lalu batch lanjut — tidak pernah menghentikan sisanya.
+Halaman tracker menampilkan status per vendor beserta pesan error yang sudah
+diterjemahkan jadi kalimat biasa.
 
 Alur: **brief → pilih kategori + centang vendor → preview → kirim → tracker**
 
-Tiga halaman:
+### 2. Penerbitan SPK
 
-- **Vendor** — CRUD data vendor, kategori, dan status aktif/nonaktif.
-- **Kirim** — brief acara, pemilihan vendor, preview email, lalu kirim.
-- **Tracker** — riwayat pengiriman dan status per vendor: terkirim, gagal,
-  menunggu, beserta pesan error kalau ada.
+Setelah vendor menang, SPK (Surat Perintah Kerja) diterbitkan langsung dari
+baris vendor itu di tracker. Yang diisi hanya harga, lingkup kerja, dan termin
+pembayaran; nama PT, PIC, judul acara, tanggal, dan lokasi diambil dari data
+yang sudah ada.
 
-Beberapa keputusan yang menentukan bentuk tool ini:
+Nomor surat dialokasikan sekali saat baris disimpan, di dalam transaksi, dan
+tidak pernah dihitung ulang — dokumen yang dicetak ulang bulan depan tetap
+membawa nomor aslinya. Hasilnya file `.docx` berbahasa Indonesia, dengan harga
+dieja menjadi terbilang ("lima belas juta rupiah"). Satu SPK per pasangan
+acara–vendor; menerbitkan ulang berarti mengedit yang sudah ada.
 
-- **Preview wajib.** Tombol kirim tidak pernah mengirim langsung; email contoh
-  selalu ditampilkan lebih dulu, dan template subject/body masih bisa diedit di
-  layar itu.
-- **Kirim dua fase.** Semua baris outbox disimpan sebagai `draft` dalam satu
-  transaksi cepat, pengiriman jalan di background dan commit per email. Satu
-  email gagal dicatat sebagai `failed` lalu batch lanjut — tidak pernah
-  menghentikan sisanya.
-- **Progress dibaca dari database**, bukan dari state di memori, jadi refresh
-  atau restart tidak membuat angkanya bohong.
-- **Subject unik per vendor**, kalau tidak Gmail menggabungkan satu batch
-  menjadi satu thread.
-- **Dobel kirim dijaga tiga lapis**: tombol yang mengunci diri, pengecekan di
-  server, dan `UNIQUE(request_id, vendor_id)` di database.
-- **Retry hanya untuk yang gagal.** Baris berstatus `sent` tidak pernah kembali
-  jadi `draft`.
+### 3. Rundown acara
+
+Susunan acara hari-H: daftar kegiatan berurutan dengan durasi, PIC, dan
+catatan. Jam mulai dan selesai tiap item tidak pernah disimpan — semuanya
+dihitung ulang dari jam mulai acara ditambah durasi kumulatif. Ubah durasi satu
+item, semua jam di bawahnya bergeser sendiri. Item bisa dinaikkan, diturunkan,
+atau dihapus, dan urutannya selalu rapat tanpa nomor bolong.
+
+Rundown boleh melewati tengah malam: mulai 22:00 dengan total 4 jam berarti
+selesai 02:00. Kalau venue punya batas waktu dan acaranya lewat, halaman
+memberi peringatan beserta selisih menitnya — memberi tahu, bukan memblokir,
+karena acara yang molor tetap acara yang nyata. Halamannya bisa langsung
+dicetak: aturan `@media print` menyembunyikan seluruh chrome aplikasi dan
+menyisakan jadwalnya saja, seluruhnya dalam bahasa Indonesia karena lembar itu
+dipegang kru dan vendor di lokasi.
 
 ## Stack
 
-- Python 3.12, FastAPI, Jinja2, HTMX
-- SQLite, raw SQL lewat modul `sqlite3` — tanpa ORM, semua query di `db.py`
-- aiosmtplib, Gmail SMTP + app password
-- Pico.css v2 dan font Inter via CDN — tanpa build step
-- Konfigurasi lewat `.env`
+Python 3.12 · FastAPI · Jinja2 · HTMX · SQLite dengan raw SQL · aiosmtplib +
+Gmail SMTP · python-docx · Pico.css v2 lewat CDN.
+
+Tanpa ORM, tanpa framework frontend, tanpa build step. Semua query di `db.py`,
+logika domain tanpa lapisan web di `core/`, satu router per area di `routes/`,
+dan seluruh CSS custom dalam satu blok `<style>` di `templates/base.html`.
 
 ## Cara menjalankan
 
@@ -61,12 +79,12 @@ python -m venv .venv
 pip install -r requirements.txt
 
 copy .env.example .env          # macOS/Linux: cp .env.example .env
-python init_db.py               # buat skema + seed (6 kategori, 25 vendor)
+python init_db.py               # skema + seed: 6 kategori, 25 vendor, 1 contoh acara
 
 uvicorn main:app --reload
 ```
 
-Buka http://127.0.0.1:8000 — halaman akan diarahkan ke `/vendors`.
+Buka http://127.0.0.1:8000 — otomatis diarahkan ke `/vendors`.
 
 ### Konfigurasi `.env`
 
@@ -82,15 +100,12 @@ Buka http://127.0.0.1:8000 — halaman akan diarahkan ke `/vendors`.
 | `DB_PATH` | `db/rfq.db` | Lokasi file SQLite |
 
 `DRY_RUN=true` adalah default yang disengaja: demo bisa dijalankan penuh sampai
-tracker tanpa satu pun email benar-benar terkirim. Set ke `false` hanya kalau
-memang mau mengirim sungguhan.
-
-Cek kredensial SMTP tanpa menjalankan aplikasi:
+tracker tanpa satu pun email benar-benar terkirim.
 
 ```bash
-python cek_email.py             # kirim satu email percobaan
 python config.py                # tampilkan konfigurasi yang terbaca
-python init_db.py               # reset database ke kondisi awal
+python cek_email.py             # kirim satu email percobaan
+python init_db.py               # bangun ulang database dari nol (menghapus yang ada)
 ```
 
 ## Batas scope
@@ -100,13 +115,15 @@ bukan karena terlewat:
 
 | Tidak dibangun | Alasan |
 | --- | --- |
-| Login / autentikasi | Tool internal, dipakai di jaringan kantor oleh satu tim kecil. Menambah login berarti menambah user, session, dan reset password — semuanya di luar masalah yang mau diselesaikan. |
-| Parsing balasan otomatis | Butuh IMAP polling dan pencocokan thread. `outbox.message_id` sudah disimpan sebagai fondasi, dan status `replied` sudah ada di skema, tapi pengisiannya belum dikerjakan. |
-| Tabel quotations + perbandingan harga | Fitur ini baru masuk akal setelah balasan bisa dibaca otomatis. Tanpa itu, harga tetap harus diketik manual — sama saja dengan spreadsheet yang sudah dipakai sekarang. |
-| Lampiran file | Bikin RFQ berisiko masuk spam dan menambah urusan penyimpanan file. Detail kebutuhan cukup ditulis di body email. |
-| Template per kategori | Satu template dengan placeholder sudah menutup semua kategori. Template bisa diedit langsung di layar preview kalau perlu penyesuaian. |
-| Integrasi kalender | Tidak menyentuh bottleneck-nya, yaitu loop kirim manual. |
-| Docker, CI, test menyeluruh | Dijalankan lokal untuk demo. Yang dites manual: alur penuh brief sampai tracker, termasuk jalur gagal dan retry. |
+| **LLM / AI di mana pun** | Tidak ada satu pun panggilan model. Semua teks keluar dari template Jinja dan tabel yang ditulis tangan — termasuk terbilang, pesan error SMTP, dan aritmetika rundown. Hasilnya bisa diprediksi dan diuji. |
+| **Login / autentikasi** | Tool internal, satu tim kecil di jaringan kantor. Route kirim pun tidak diautentikasi — tidak ada lapisan auth sama sekali. Menambahnya berarti user, session, dan reset password, semuanya di luar masalah yang mau diselesaikan. |
+| **Test otomatis** | Tidak ada. Yang diuji manual: alur penuh brief sampai tracker termasuk jalur gagal dan retry, penerbitan dan cetak ulang SPK, serta aritmetika rundown termasuk lewat tengah malam dan batas venue. |
+| **Migrasi skema** | Tidak ada. Perubahan skema dilakukan dengan membangun ulang database dari `db/schema.sql` lewat `init_db.py`. Data demo memang habis pakai, jadi migrasi tidak dibutuhkan — dan `db/rfq.db` tidak masuk repo. |
+| **Parsing balasan otomatis** | Butuh IMAP polling dan pencocokan thread. `outbox.message_id` sudah disimpan sebagai fondasi dan status `replied` sudah ada di skema, tapi tidak pernah diisi dan tidak ditampilkan di mana pun. |
+| **Tabel quotations + perbandingan harga** | Baru masuk akal setelah balasan bisa dibaca otomatis. Tanpa itu harga tetap diketik manual — sama saja dengan spreadsheet yang sudah dipakai. |
+| **Lampiran file** | Bikin RFQ berisiko masuk spam dan menambah urusan penyimpanan. Detail kebutuhan cukup ditulis di body email. |
+| **Template email per kategori** | Satu template dengan placeholder sudah menutup semua kategori. |
+| **Integrasi kalender, Docker, CI** | Tidak menyentuh bottleneck-nya, yaitu loop kirim manual. Dijalankan lokal untuk demo. |
 
 Batasan lain yang perlu diketahui saat demo:
 
@@ -115,6 +132,4 @@ Batasan lain yang perlu diketahui saat demo:
   `draft` dan bisa dilanjutkan lewat tombol retry di halaman tracker.
 - Gmail punya batas kirim harian. Untuk batch besar, naikkan
   `SEND_DELAY_SECONDS`.
-- Tracker hanya menampilkan status pengiriman, bukan status balasan. Status
-  `replied` sudah ada di skema tapi belum pernah diisi, jadi tidak ditampilkan
-  di mana pun.
+- Tracker menampilkan status pengiriman, bukan status balasan.
