@@ -1,4 +1,4 @@
-# Vendor RFQ Blast
+# Event Ops
 
 Internal tool untuk tim procurement event organizer: kirim satu permintaan
 penawaran (RFQ) ke banyak vendor sekaligus, lalu pantau hasilnya per vendor.

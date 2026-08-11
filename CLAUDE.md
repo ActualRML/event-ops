@@ -1,4 +1,4 @@
-# Vendor RFQ Blast — MVP
+# Event Ops — MVP
 
 ## Context
 Internal tool for an event-organizer company. Procurement staff currently
