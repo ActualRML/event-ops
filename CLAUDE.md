@@ -194,6 +194,344 @@ the next rebuild from schema.sql. No existing row violates it.
 14. One SPK per (request_id, vendor_id). Re-issuing means editing the
     existing row, not creating a second.
 
+## UI conventions
+
+Recorded from the running app at a 1366px viewport, reading computed
+styles rather than the stylesheet, and re-measured after the audit fixes
+landed. Every value below is what renders today, not what ought to
+render. All custom CSS lives in the one `<style>` block in
+`templates/base.html`.
+
+### Units — all new CSS is written in px
+
+**Write px. Do not use rem.** Pico's responsive root font size makes rem
+a moving target: 16px base, stepping up at 576/768/1024/1280/1536px, so
+at any desktop width from 1280px up **1rem = 20px**, not 16px. Mixing
+the two units is what produced every size mismatch the audit found.
+
+The root font size is deliberately **not** pinned. The current rendering
+is approved, and overriding the root would resize every rem value still
+in the sheet at once — a full visual re-review for no gain. Existing rem
+values stay; new ones are not added.
+
+Still in rem, rendering at 1280px and up: tables (.9rem → 18px body,
+.72rem → 14.4px headers), badges (.75rem → 15px), chips (.8rem → 16px),
+nav links (.85rem → 17px), brand (.78rem → 15.6px), h2 (1.5rem → 30px),
+metric numbers (1.9rem → 38px), `.btn-mini` (.72rem → 14.4px), and the
+`.metrik` / `.aksi-grup` gaps.
+
+Everything else is px and fixed: every form control (34px tall, 14px
+text, 13px labels, 12px helper text), the /vendors controls row, section
+h3 (13px), `.status-batch` (14px), `.konteks` (11px/14px), `.pratinjau`
+(13px), vendor picker rows (14px), `#counter` (13px), footer (12px).
+
+Table body text still renders 18px against a 14px form control. That is
+the one remaining rem/px gap, left alone on purpose — closing it means
+restating the whole table scale in px, which is a visual change rather
+than a cleanup.
+
+### Text colour
+
+One dark value, `#3c3a38`, written once as `--teks-gelap` on
+`:root[data-theme="light"]` and fed to `--pico-color` and
+`--pico-h1-color`…`--pico-h6-color`. Body text, table text and every
+heading inherit it; nothing restates the literal.
+
+Two things to know before reusing it:
+
+- The override sits on `:root[data-theme="light"]`, not a bare `:root` —
+  Pico defines its palette under a two-part selector that a bare `:root`
+  loses to.
+- Inside an `hgroup`, and in some other Pico components, Pico redefines
+  `--pico-color` locally to the muted colour. Read `--teks-gelap`
+  directly in those places. `.chip-angka` is the live example.
+
+Muted text is `--pico-muted-color` (#646b79) throughout. Links keep
+their own colour: Pico redefines `--pico-color` inside `<a>`, which is
+what leaves the nav untouched. Semantic colours are unaffected by the
+above — `#2e7d32` sent/active, `#b3261e` failed/danger, `#1565c0`
+replied, `#78848f` draft/inactive.
+
+### Page shell
+
+- Page background `#f6f7f9`; every surface on it is `#fff`.
+- Panel is `main.container` itself — no page adds a wrapper.
+  `max-width: min(1200px, calc(100% - 48px))`, centred, so the gutter to
+  the viewport is 24px each side and never collapses on narrow screens.
+- Panel border `1px solid #e4e7eb`, radius **10px**, padding
+  `14px 24px 32px`, margin-block `10px 12px` (10px of grey above,
+  12px below to the footer).
+- Shadow, deliberately barely visible:
+  `0 1px 2px rgba(16,24,40,.04), 0 2px 6px rgba(16,24,40,.03)`.
+- 24px is the horizontal gutter everywhere — panel, header nav, footer
+  all share the same `max-width` + `padding-inline: 24px` pair, so the
+  brand, the page title and the footer text sit on one vertical line.
+- A page ending in `table.tabel` drops the panel's bottom padding, the
+  table's bottom margin and the last row's hairline (`:has()` rule), so
+  the panel border closes the table.
+
+### Header bar and footer
+
+| | header `.bilah` | footer `.kaki` |
+|---|---|---|
+| height | 59px | 42px |
+| padding-block (inner) | 14px | 12px |
+| background | `#fff` | `#fff` |
+| border | bottom `1px #e7eaf0` (`--pico-muted-border-color`) | top `1px #eef0f3` |
+| text | brand 15.6px/600/uppercase/1.09px tracking, muted; nav links 17px/500 | 12px/1.4 muted |
+
+The footer border is one step lighter than the header's on purpose — the
+header stays the heavier of the two. `.kaki` uses `margin-top: auto`
+against a flex-column body, so the slack lands on the grey page, not
+inside the panel.
+
+Nav links: muted, 8px/15px padding, radius 8px, hover fills
+`rgba(128,138,148,.14)`. Active page = weight 600, fill
+`rgba(128,138,148,.16)`, plus `inset 0 -2px 0` underline in the link
+colour.
+
+### Page title block
+
+Two shapes, chosen by whether the page has a context line:
+
+- **With chips** — plain `<hgroup>`: h2 (30px/1.25, `-.02em`)
+  → 4px → `.chips` → **20px** to whatever follows. Used by /vendors,
+  /tracker, /tracker/{id}, and the SPK form when editing an existing SPK.
+- **Title only** — `<hgroup class="judul-rapat">`: h2 margin-bottom 0,
+  hgroup margin-bottom **16px**. Used by /vendors/new, /send, preview,
+  /categories/new, and the SPK form when issuing a new one.
+
+The 16px/20px split is a rule, not drift: it tracks whether the page has
+a context line. Chips carry their own visual mass, so the block below
+them needs the extra 4px to sit clear. Pick the shape by whether the
+page has chips, and the spacing follows.
+
+Chips are the only context-line form in use — no prose subtitles exist,
+though `main hgroup > p` is styled for one (.875rem muted). A chip is
+white on `1px #e4e7eb`, radius 999px, 4px/10px padding, 16px muted text,
+with `.chip-angka` carrying the value at weight 500 in `--teks-gelap`.
+Gap between chips 8px. Chips are used for counts (`25 vendors`), for
+labelled values (`event 19 September 2026`), and for bare state labels
+(`newest first`).
+
+### Forms
+
+The whole form scale lives on `.form-rapat`, and every form page carries
+it plus one of `.form-vendor` (record forms) or `.form-kirim` (Send).
+
+- Control height **34px** for input/select — 14px/1.4 text + 6px/10px
+  padding + 1px border. Textarea is `height: auto` at the same padding.
+  34px is the height for every control outside a table row, including
+  the /vendors controls row.
+- One border and one radius across every text control: **`#e4e7eb`,
+  8px**, matching the select and the read-only blocks. This overrides
+  Pico's own `#cfd5e2`/5px and the pill radius Pico gives
+  `type="search"`. Set by two rules in `base.html` whose `:not()` chains
+  clear Pico's specificity; border-color is applied separately so an
+  `aria-invalid` field keeps its red border (`#b86a6b`) and still takes
+  the radius. Checkboxes, radios and the switch are deliberately outside
+  this and keep Pico's `#cfd5e2` at 5px.
+- Label 13px/1.3, weight 500, margin-bottom 0.
+- Label → its control: **4px** (`margin-top` on the control; the whole
+  `<label>` is the field group, control nested inside).
+- Helper/error `<small>`: block, 12px, 4px above.
+- Field row → next field row: **12px** on `.form-vendor` (`> label`,
+  `> fieldset`, `> .grid-isian`), **16px** on `.form-kirim`
+  (`section > label`, `section > .grid`).
+- Two-column grid: `.grid-isian` on the vendor form —
+  `1fr 1fr`, column-gap 20px, row-gap 12px, short fields two per row, an
+  odd count leaving the last cell empty. Send instead uses Pico's own
+  `.grid` for its one paired row (the two date fields, 20px gap).
+  Full-width fields (Notes, Requirements, Scope of work) sit outside the
+  grid as direct children.
+- `.form-sempit` caps a form at 420px — /categories/new only.
+- Checkbox rows are not field groups: `.kotak-kategori` is a wrapping
+  flex row, 6px/16px gap, 13px labels at weight 400.
+
+Sections (`main section > h3`) group fields on Send and preview: 13px/600,
+`border-top: 1px #eef0f3`, padding-top 16px, margin-bottom 12px. The rule
+is the section divider — no nested panels anywhere in the app.
+
+`main section:first-of-type > h3` drops both the border and the
+padding-top: the first section on a page has nothing above it to divide
+from, and the rule would otherwise draw a hairline immediately under the
+page title. Its heading lands the same 16px below the title that
+`.judul-rapat` gives every other title-only page.
+
+### Buttons
+
+Three levels, all 34px tall / 14px / 6px 14px padding / radius 5px when
+they sit in an action row:
+
+1. **Primary** — Pico default fill `#0172ad`, white text. One per page,
+   always last in the row. Save (vendor, category), Continue to preview,
+   Send now, Retry failed, Issue SPK / Update, Add Vendor.
+2. **Secondary** — `class="secondary outline"`, transparent on `#5d6b89`
+   border and text. Cancel, Back, All requests, Add Category, and every
+   in-table action button.
+3. **Muted (`.btn-mati`)** — transparent on `--pico-muted-border-color`,
+   muted text, turning `#b3261e` on hover/focus only. Exactly one use:
+   Deactivate/Activate in the vendor table.
+
+Row containers:
+
+- `.baris-aksi` — left-aligned, 8px gap, no top margin. Data-entry
+  forms: vendor form, category form, SPK form. Only here does the submit
+  get a fixed 110px width (`.form-vendor .baris-aksi button[type=submit]`).
+- `.baris-aksi-kanan` — right-aligned, 8px gap, margin-top 20px,
+  primary last. Send, preview, tracker detail.
+- `.aksi-halaman` — right-aligned, 8px gap, inside the controls row.
+  /vendors only. `main > .grid :is(select, input, button, [role=button])`
+  pins every control in that row to the same 34px/14px as a form control,
+  so the filter select, the search box and both page buttons match the
+  record forms. The explicit height is load-bearing: Pico gives input and
+  `[role=button]` a height derived from 1rem while select and button stay
+  content-sized, so the row stair-steps without it.
+- `.aksi-grup` — in-table pair, right-aligned, .25rem gap, children
+  `flex: 1 1 0; max-width: 6rem` so both measure equal down the column.
+  `.btn-spk` lifts the cap when it is alone in the cell.
+
+`.btn-mini` (in-table): 14.4px, `.2rem/.25rem` padding, full-width in its
+flex slot, ellipsised — 32px tall, not 34px. **32px is for table rows
+only.** It never sits beside a form control; anything outside a row is
+34px.
+
+Disabled: `opacity: .45; cursor: not-allowed; filter: grayscale(35%)`.
+
+### Tables
+
+One look everywhere via `.tabel`; `table-layout: fixed` with a per-table
+`<colgroup>` in percentages is how every column width is set — no
+`min-width`, no `<th>` sizing. Widths in use:
+
+- vendors: 24/14/20/13/11/18
+- tracker: 6/32/16/18/18/10
+- tracker detail: 19/11/17/11/13/13/16
+- preview: 34/40/26
+
+Cells `.35rem .6rem` (7px/12px), `vertical-align: middle`,
+`overflow-wrap: break-word`. First and last columns zero their outer
+padding so the table's edges line up with the heading above and the
+button beside it. Header row: 14.4px uppercase, `.04em` tracking, muted,
+nowrap, `border-bottom: 3px` (Pico's thead default) against 1px on body
+rows, both `#e7eaf0`.
+
+Secondary text: `.redup` (muted, .85em) for PIC, email, timestamps.
+`.sel-teks` clips single-token values to one line with the full value on
+`title`. `.angka` right-aligns with tabular numerals.
+
+Badges — 15px, radius 999px, `.15rem .55rem`, white text, nowrap,
+ellipsised, one class per status keyed off the raw DB value:
+
+| class | colour | shown as |
+|---|---|---|
+| `.badge-aktif` / `.badge-sent` | `#2e7d32` | Active / Sent |
+| `.badge-nonaktif` / `.badge-draft` | `#78848f` | Inactive / Pending |
+| `.badge-gagal` / `.badge-failed` | `#b3261e` | N failed / Failed |
+| `.badge-replied` | `#1565c0` | Replied |
+
+Inactive rows get `opacity: .45` on the whole row.
+
+Metric cards (tracker detail only): 3-up grid, 20px gap, 30px below,
+dropping to 2-up under 720px. Card is `1px --pico-muted-border-color`,
+radius **8px** — the same as `.konteks` and `.pratinjau`, all three
+being the same idea — `.9rem 1rem` padding, no fill. Number 38px/600,
+label 15px uppercase muted. Sent green `#2e7d32`, Failed red `#b3261e`,
+Total inherits.
+
+### Warnings and empty states
+
+- **Validation** — bare Pico `<article>`: white, radius 5px, 20px
+  padding, 20px below, Pico's own large shadow. Bold lead sentence, then
+  one plain line. Same shape on every form page.
+- **Blocking** — `article.peringatan` adds `border-left: 3px #b3261e`.
+  SPK form only, when the vendor or request is missing required data;
+  the submit is disabled alongside it.
+- **Empty table** — a single `<td class="kosong" colspan=…>`: muted,
+  italic, `padding-block: 30px`. Every empty state is written as
+  a sentence plus the next action ("Start with 'Add Vendor' — …"), and
+  /vendors varies it three ways (search / filter / genuinely empty).
+- **Inline reassurance** — `p.redup` under the tracker detail table when
+  a batch finished clean.
+- Read-only value blocks share one surface: `#fbfcfd` on `1px #e4e7eb`,
+  radius 8px, `12px 14px` padding — `.konteks` (SPK form, 2-col dl,
+  11px uppercase dt over 14px dd, collapsing to 1 col under 720px) and
+  `.pratinjau` (preview).
+
+### Preview page
+
+Measured on a rendered preview, not read off the stylesheet.
+
+- `.pratinjau` — the rendered email body, a `<pre>`: 13px /
+  line-height 20.15px in Pico's monospace stack (`ui-monospace,
+  SFMono-Regular, "SF Mono", Menlo, Consolas, …`), background `#fbfcfd`,
+  `1px solid #e4e7eb`, radius 8px, padding `12px 14px`, margin 0,
+  `white-space: pre-wrap`, `overflow-x: auto`. It is the only monospace
+  surface in the app — the real email is plain text, so only the box
+  around it is brought into line.
+- `.subjek` above it — 14px/1.5 in `--teks-gelap`, 12px below, with a
+  bold `Subject:` lead.
+- Action row is `.baris-aksi-kanan` (right-aligned, 8px gap, 20px top
+  margin), both buttons 34px tall at 14px with 14px inline padding and
+  radius 5px: **Back** secondary-outline, 63px wide, transparent on
+  `#5d6b89`; **Send now** primary, 96px wide, `#0172ad` filled.
+  Back is first in source order on purpose — implicit form submission
+  picks the first submit button, so Enter can never reach the dispatch
+  route.
+- Both sections follow the shared rule: `Sample email` is
+  `:first-of-type` and draws no top border; `Recipients` draws its
+  `1px #eef0f3` divider with 16px above.
+
+### Spacing scale actually in use
+
+`2 · 4 · 6 · 8 · 10 · 12 · 14 · 16 · 20 · 24 · 30 · 32`
+
+The recurring ones and what they mean: **4px** label→control and
+h2→chips · **8px** every action-row and chip gap, vendor-row padding ·
+**12px** field→field on record forms, section h3→content, footer
+padding, panel→footer · **16px** field→field on Send, section rule→
+heading, title-only block→content, controls row→table · **20px** grid
+column gap, title+chips block→content, action row top margin, metric
+gap, `<article>` padding · **24px** the horizontal gutter, everywhere ·
+**30px** metric cards→status line, empty-state padding-block · **32px**
+panel bottom padding.
+
+Radii in play, after the audit fixes:
+
+- **8px** — every form control (input, textarea, select) and every
+  bordered read-only box (`.konteks`, `.pratinjau`, `.metrik-kartu`),
+  plus nav links. This is the default for new work.
+- **5px** — buttons, `<article>`, checkboxes and radios, all inheriting
+  Pico's `--pico-border-radius` at this root size.
+- **10px** — the panel, and only the panel.
+- **999px** — chips and badges.
+
+### Resolved by the audit
+
+The first audit found six places where two pages disagreed on the same
+element. All six are fixed; the rules above are what replaced them, and
+they are recorded here so the same ground is not re-litigated.
+
+1. **Text-control border and radius** — inputs and textareas kept Pico's
+   `#cfd5e2` at 5px beside selects at `#e4e7eb`/8px. Now one treatment,
+   `#e4e7eb` at 8px, for every text control. See Forms.
+2. **Metric-card radius** — 5px → 8px, matching the other bordered
+   read-only boxes. See Tables.
+3. **Control height** — the /vendors controls row ran at 32px against
+   34px everywhere else. Now 34px, with 32px reserved for `.btn-mini`
+   inside a table row. See Buttons.
+4. **Two dark text colours** — `#3c3a38` and Pico's `#373c44` both in
+   use. Now one value, `--teks-gelap`. See Text colour.
+5. **First section's rule** — `section > h3` drew a hairline directly
+   under the page title on Send and preview. Now suppressed on
+   `:first-of-type`. See Forms.
+6. **Title-block spacing, 16 vs 20** — kept as-is. It tracks whether the
+   page has a context line, which is a rule rather than drift; it is
+   written up under Page title block.
+
+One rem/px gap is knowingly left open: table body text renders 18px
+against 14px form controls. See Units.
+
 ## Out of scope — do not build
 auth/login · automated reply parsing · quotations table · price
 comparison · file attachments · per-category templates · calendar

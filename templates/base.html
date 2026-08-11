@@ -21,6 +21,23 @@
        Pico's :root on specificity and wins on source order. */
     :root { --pico-outline-width: 2px; }
 
+    /* One dark text colour for the whole app. Body, table and heading text all
+       resolve to it, so nothing below needs to restate the value.
+       :root[data-theme="light"], not a bare :root — Pico defines its palette
+       under a two-part selector that a bare :root loses to.
+       Links are unaffected: Pico redefines --pico-color inside <a>, which is
+       what keeps the nav's own colour.
+       --teks-gelap is the one place the value is written. Read that, not
+       --pico-color, anywhere the element sits inside an hgroup or another
+       Pico component that redefines --pico-color locally to mute it. */
+    :root[data-theme="light"] {
+      --teks-gelap: #3c3a38;
+      --pico-color: var(--teks-gelap);
+      --pico-h1-color: var(--teks-gelap); --pico-h2-color: var(--teks-gelap);
+      --pico-h3-color: var(--teks-gelap); --pico-h4-color: var(--teks-gelap);
+      --pico-h5-color: var(--teks-gelap); --pico-h6-color: var(--teks-gelap);
+    }
+
     /* inline-block + nowrap: the badge never wraps and never grows past its
        own cell. */
     .badge { display: inline-block; max-width: 100%; padding: .15rem .55rem;
@@ -42,8 +59,10 @@
     /* Metric cards — tracker detail. */
     .metrik { display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr);
               margin-bottom: 1.5rem; }
+    /* 8px, not --pico-border-radius: this is a bordered read-only box, the
+       same idea as .konteks and .pratinjau, and the three now match. */
     .metrik-kartu { border: 1px solid var(--pico-muted-border-color);
-                    border-radius: var(--pico-border-radius);
+                    border-radius: 8px;
                     padding: .9rem 1rem; }
     .metrik-angka { font-size: 1.9rem; font-weight: 600; line-height: 1.1; }
     .metrik-label { font-size: .75rem; text-transform: uppercase;
@@ -55,7 +74,7 @@
        state you are in, the rest reads as one plain sentence. */
     .status-batch { margin: 0 0 12px; font-size: 14px; line-height: 1.5;
                     color: var(--pico-muted-color); }
-    .status-batch strong { color: #3c3a38; font-weight: 600; }
+    .status-batch strong { color: var(--teks-gelap); font-weight: 600; }
     .status-gagal { color: #b3261e; font-weight: 500; }
     @media (max-width: 720px) { .metrik { grid-template-columns: repeat(2, 1fr); } }
 
@@ -130,6 +149,17 @@
       background-size: 14px 14px;
     }
 
+    /* Text inputs and textareas take the same border and radius as the select
+       above, so a field and the picker beside it read at one weight. They
+       replace Pico's own #cfd5e2 at 5px, and the pill radius Pico gives
+       type="search". The :not() chain is what clears Pico's specificity;
+       border-color is set separately so an aria-invalid field keeps its red
+       border and still picks up the radius. */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]),
+    textarea { border-radius: 8px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]):not([aria-invalid]),
+    textarea:not([aria-invalid]) { border-color: #e4e7eb; }
+
     /* Admin-tool density. 14px/1.4 = 19.6 + 12 padding + 2 border = 34px. */
     .form-rapat :is(input:not([type="checkbox"]):not([type="radio"]),
                     textarea, select) {
@@ -193,9 +223,15 @@
        padding-top and the action row's margin instead. */
     main section { margin-bottom: 0; }
     main section > h3 {
-      font-size: 13px; font-weight: 600; letter-spacing: .01em; color: #3c3a38;
+      font-size: 13px; font-weight: 600; letter-spacing: .01em;
       border-top: 1px solid #eef0f3; padding-top: 16px; margin: 0 0 12px;
     }
+    /* The rule separates one section from the next, so the first section on a
+       page has nothing to separate from — it would only draw a hairline
+       immediately under the page title. Dropping the padding with it puts the
+       heading the same 16px below the title that .judul-rapat gives every
+       other title-only page. */
+    main section:first-of-type > h3 { border-top: none; padding-top: 0; }
     /* A field group is the whole <label> — the control it owns is nested
        inside it, 4px below the label text via the shared .form-rapat
        margin-top. 16px separates one group from the next, so every label
@@ -352,7 +388,7 @@
                      max-width: min(1200px, calc(100% - 48px));
                      margin-inline: auto; }
     main h2 { font-size: 1.5rem; line-height: 1.25; letter-spacing: -.02em;
-              color: #3c3a38; margin-top: 0; margin-bottom: 4px; }
+              margin-top: 0; margin-bottom: 4px; }
 
     /* Context line as chips: number carries the weight, label stays muted. */
     .chips { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
@@ -361,7 +397,9 @@
             background: #fff; border: 1px solid #e4e7eb; border-radius: 999px;
             padding: 4px 10px; font-size: .8rem; line-height: 1.35;
             color: var(--pico-muted-color); white-space: nowrap; }
-    .chip-angka { font-weight: 500; color: #3c3a38; }
+    /* Inside an hgroup, where Pico mutes --pico-color on every child after the
+       first — so this reads the value directly. */
+    .chip-angka { font-weight: 500; color: var(--teks-gelap); }
     main hgroup { margin-top: 0; margin-bottom: 20px; }
     main hgroup > p { margin: 0; font-size: .875rem;
                       color: var(--pico-muted-color); }
@@ -369,17 +407,16 @@
        fields on Send) keeps Pico's spacing. */
     main > .grid { margin-bottom: 16px; }
     main > .grid form, main > .grid > div { margin-bottom: 0; }
-    /* Controls row: every control the same height as its neighbours, and the
-       same height as the Edit button in the table below (21.6 + 8 + 2 = 31.6px).
-       Only the vertical metrics are dialled down — font-size and the inline
-       padding stay put, so the two buttons keep the width they had.
-       height: auto is load-bearing — Pico gives input and [role=button] an
-       explicit height derived from 1rem, while select and button stay
-       content-sized, so the row stair-steps without it. */
+    /* Controls row: the same 34px/14px metrics as every form control, so the
+       filter select and the page buttons match the fields on the record forms
+       rather than the .btn-mini buttons in the table below. The explicit
+       height is load-bearing — Pico gives input and [role=button] a height
+       derived from 1rem while select and button stay content-sized, so the row
+       stair-steps without it. */
     main > .grid :is(select, input, button, [role="button"]) {
-      margin-bottom: 0; --pico-form-element-spacing-vertical: 4px;
-      padding-block: 4px; font-size: .9rem; line-height: 1.2;
-      height: auto;
+      margin-bottom: 0; --pico-form-element-spacing-vertical: 6px;
+      padding-block: 6px; font-size: 14px; line-height: 1.4;
+      height: 34px;
     }
     main > table { margin-top: 0; }
     /* Pages that end in a table close on the last row. The table's trailing
