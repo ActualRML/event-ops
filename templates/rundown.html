@@ -7,19 +7,29 @@
   {# Same chip vocabulary as tracker detail: a labelled value per chip, the
      value bold. The computed end time earns a chip because it is the number
      everyone on the page is actually looking for. #}
+  {# Every label carries both languages: .layar on screen, .cetak on paper.
+     Only the date needs a second value as well as a second label — the times,
+     the counts and the venue name read the same either way. #}
   <p class="chips">
-    <span class="chip">Rundown for request <span class="chip-angka">#{{ request_id }}</span></span>
-    <span class="chip">event <span class="chip-angka">{{ permintaan.tanggal_acara | date or "no date" }}</span></span>
+    <span class="chip"><span class="layar">Rundown for request</span><span class="cetak">Rundown permintaan</span>
+      <span class="chip-angka">#{{ request_id }}</span></span>
+    <span class="chip"><span class="layar">event</span><span class="cetak">acara</span>
+      <span class="chip-angka"><span class="layar">{{ permintaan.tanggal_acara | date or "no date" }}</span><span class="cetak">{{ permintaan.tanggal_acara | tanggal or "tanpa tanggal" }}</span></span></span>
     {# Carried for the printout, which is read away from the screen and has to
        say where to turn up. Omitted rather than shown as a dash when the brief
        never had one. #}
     {% if permintaan.lokasi %}
-    <span class="chip">location <span class="chip-angka">{{ permintaan.lokasi }}</span></span>
+    <span class="chip"><span class="layar">location</span><span class="cetak">lokasi</span>
+      <span class="chip-angka">{{ permintaan.lokasi }}</span></span>
     {% endif %}
     {% if rundown %}
-    <span class="chip">starts <span class="chip-angka">{{ rundown.jam_mulai }}</span></span>
-    <span class="chip">ends <span class="chip-angka">{{ jadwal.jam_selesai }}</span></span>
-    <span class="chip"><span class="chip-angka">{{ baris|length }}</span> item{{ "s" if baris|length != 1 }}</span>
+    <span class="chip"><span class="layar">starts</span><span class="cetak">mulai</span>
+      <span class="chip-angka">{{ rundown.jam_mulai }}</span></span>
+    <span class="chip"><span class="layar">ends</span><span class="cetak">selesai</span>
+      <span class="chip-angka">{{ jadwal.jam_selesai }}</span></span>
+    {# Indonesian has no plural inflection, so .cetak needs no counter-suffix. #}
+    <span class="chip"><span class="chip-angka">{{ baris|length }}</span>
+      <span class="layar">item{{ "s" if baris|length != 1 }}</span><span class="cetak">mata acara</span></span>
     {% endif %}
   </p>
 </hgroup>
@@ -34,9 +44,13 @@
    has to be told about, so nothing here is disabled. #}
 {% if jadwal and jadwal.lewat_batas %}
 <article class="peringatan">
-  <strong>This rundown runs past the venue limit.</strong>
-  It ends at {{ jadwal.jam_selesai }}, {{ jadwal.lebih_menit | duration }} after
-  the {{ rundown.batas_venue }} limit. Shorten an item, or start earlier.
+  <span class="layar"><strong>This rundown runs past the venue limit.</strong>
+    It ends at {{ jadwal.jam_selesai }}, {{ jadwal.lebih_menit | duration }} after
+    the {{ rundown.batas_venue }} limit. Shorten an item, or start earlier.</span>
+  <span class="cetak"><strong>Rundown ini melewati batas waktu venue.</strong>
+    Selesai pukul {{ jadwal.jam_selesai }}, {{ jadwal.lebih_menit | durasi }}
+    setelah batas {{ rundown.batas_venue }}. Persingkat satu mata acara, atau
+    mulai lebih awal.</span>
 </article>
 {% endif %}
 
@@ -72,7 +86,7 @@
 
 {% if rundown %}
 <section>
-  <h3>Running order</h3>
+  <h3><span class="layar">Running order</span><span class="cetak">Susunan Acara</span></h3>
   {# tabel-rundown exists only so the print block can drop this table's two
      action columns by position. Keying that off td.aksi + th:empty instead
      would misfire elsewhere: preview has an empty header over a data cell,
@@ -120,8 +134,9 @@
           {% if b.item.catatan %}<div class="redup">{{ b.item.catatan }}</div>{% endif %}
         </td>
         {# Left-aligned: "1 h 30 min" is a formatted label, not a quantity to
-           line up decimal points on, so .angka would only fight the header. #}
-        <td>{{ b.item.durasi_menit | duration }}</td>
+           line up decimal points on, so .angka would only fight the header.
+           Both unit sets, like every other label on the sheet. #}
+        <td><span class="layar">{{ b.item.durasi_menit | duration }}</span><span class="cetak">{{ b.item.durasi_menit | durasi }}</span></td>
         <td class="redup sel-teks">{{ b.item.pic or "—" }}</td>
         <td class="aksi">
           {# Disabled rather than hidden at the ends, so the pair keeps its
@@ -177,10 +192,14 @@
      only the over-limit clause in red. #}
   {% if baris %}
   <p class="status-batch">
-    <strong>{{ baris|length }} item{{ "s" if baris|length != 1 }}.</strong>
-    {{ total_menit | duration }} in total, ending {{ jadwal.jam_selesai }}{% if jadwal.lewat_batas %},
-    <span class="status-gagal">{{ jadwal.lebih_menit | duration }} past the venue
-    limit</span>{% endif %}.
+    <span class="layar"><strong>{{ baris|length }} item{{ "s" if baris|length != 1 }}.</strong>
+      {{ total_menit | duration }} in total, ending {{ jadwal.jam_selesai }}{% if jadwal.lewat_batas %},
+      <span class="status-gagal">{{ jadwal.lebih_menit | duration }} past the venue
+      limit</span>{% endif %}.</span>
+    <span class="cetak"><strong>{{ baris|length }} mata acara.</strong>
+      Total {{ total_menit | durasi }}, selesai {{ jadwal.jam_selesai }}{% if jadwal.lewat_batas %},
+      <span class="status-gagal">lewat {{ jadwal.lebih_menit | durasi }} dari batas
+      venue</span>{% endif %}.</span>
   </p>
   {% endif %}
 </section>

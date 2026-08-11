@@ -8,7 +8,7 @@ from datetime import date
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from core import tampilan
+from core import renderer, tampilan
 from deps import templates
 from routes import rundown, send, spk, tracker, vendors
 
@@ -24,6 +24,12 @@ templates.env.filters["datetime"] = tampilan.format_datetime
 templates.env.filters["error_message"] = tampilan.pesan_error
 # Rundown durations and totals, stored as plain minutes.
 templates.env.filters["duration"] = tampilan.format_durasi
+# The Indonesian pair, for the printed rundown only — it is carried on site by
+# crew and vendors, so it follows the same rule as the email body. Indonesian
+# names on purpose: in a template, `| tanggal` next to `| date` says which
+# audience the value is for without looking anything up.
+templates.env.filters["tanggal"] = renderer.format_tanggal
+templates.env.filters["durasi"] = renderer.format_durasi
 # Footer year. Read at startup — a demo restarts far more often than a year turns.
 templates.env.globals["tahun"] = date.today().year
 

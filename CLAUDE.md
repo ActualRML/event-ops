@@ -88,9 +88,13 @@ __file__, and therefore climbs one level out of the package.
 core/renderer.py is vendor-facing, core/tampilan.py is staff-facing. Both
 format the same values; they differ only in which audience reads the result.
 
-- renderer.format_tanggal → Indonesian long form, for the message body
-  only. renderer.render_email is the single render path: preview,
-  dispatch and subject pre-rendering all call it (invariant 9).
+- renderer.format_tanggal → Indonesian long form. Vendor-facing, which is
+  now two things: the message body, and the printed rundown, which crew
+  and vendors read on site. renderer.format_durasi is its companion —
+  minutes as "1 j 30 mnt", the print counterpart of tampilan.format_durasi
+  ("1 h 30 min"). Same shape and rounding; only the unit words differ.
+  renderer.render_email is the single render path: preview, dispatch and
+  subject pre-rendering all call it (invariant 9).
 - tampilan.format_date and tampilan.format_datetime → English long form,
   for the interface only. Both parse through renderer.ke_tanggal, so the
   two languages accept and reject exactly the same inputs and only the
@@ -102,9 +106,16 @@ format the same values; they differ only in which audience reads the result.
   messages with no migration, and the full server response is still
   available in the cell's tooltip.
 
-All four of tampilan's functions are registered as Jinja filters
-(date, datetime, error_message, duration) and are used by templates only.
-format_durasi renders stored minutes as "1 h 30 min" for the rundown.
+Six Jinja filters, and which one you reach for is decided by audience,
+not by convenience:
+
+- staff-facing, from tampilan — `date`, `datetime`, `error_message`,
+  `duration`. Everything the interface renders.
+- vendor-facing, from renderer — `tanggal`, `durasi`. The printed rundown
+  only; the email body calls renderer directly rather than through a
+  filter. Indonesian filter names on purpose: `| tanggal` sitting next to
+  `| date` in a template says which audience the value is for without
+  looking anything up.
 
 mailer.kirim_email belongs to the mailer API, not the Send page family —
 it is also called by cek_email.py. The send_* rename covered the page's
@@ -507,12 +518,24 @@ on it: every muted value returns to black, and the over-limit warning
 prints as a plain sentence with a bold lead rather than a red-ruled card.
 
 Language follows the audience, not the file. The printed sheet is carried
-by crew and vendors on site, so it falls under the vendor-facing rule
-alongside the SPK, while the screen stays staff-facing English. Both
-labels live in one `<th>`: `.layar` shows on screen, `.cetak` in print.
-`#` and `PIC` read the same either way and carry no spans. Catatan has no
-header of its own — it prints as the second line inside Kegiatan, which is
-where it sits on screen too, so no value is duplicated in the markup.
+by crew and vendors on site, so the **whole sheet** is Indonesian under
+the vendor-facing rule, alongside the SPK — while the screen stays
+staff-facing English. Both versions live in the same element: `.layar`
+shows on screen, `.cetak` in print, and `@media print` swaps the pair.
+That covers the table headers, the section title (Susunan Acara), all six
+chip labels, the duration cells, the totals line and the over-limit
+warning. Values follow too where the language changes them: the event
+date goes through `| tanggal` and every duration through `| durasi`.
+
+What carries no `.layar`/`.cetak` pair, because it reads the same either
+way: `#`, `PIC`, clock times, the venue name, and the item text itself,
+which procurement already types in Indonesian. Indonesian has no plural
+inflection, so the `.cetak` half never needs the `"s" if n != 1` suffix
+its English twin carries.
+
+Catatan has no header of its own — it prints as the second line inside
+Kegiatan, which is where it sits on screen too, so no value is duplicated
+in the markup.
 
 Column hiding is scoped to `.tabel-rundown` rather than keyed off
 `td.aksi` + `th:empty`, because that pairing misfires elsewhere: preview

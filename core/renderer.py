@@ -52,9 +52,11 @@ def ke_tanggal(value):
 
 def format_tanggal(value) -> str:
     """ISO date to Indonesian long form: 2026-09-18 -> 18 September 2026.
-    EMAIL ONLY — this is what fills {{ tanggal_acara }} and {{ deadline }} in
-    the message body, which stays Indonesian. The interface uses
-    tampilan.format_date.
+
+    VENDOR-FACING ONLY. Two things read it: {{ tanggal_acara }} and
+    {{ deadline }} in the message body, and the printed rundown, which is
+    carried on site by crew and vendors. The interface uses
+    tampilan.format_date — never this.
     Anything that is not an ISO date passes through untouched."""
     hasil = ke_tanggal(value)
     if hasil is None:
@@ -62,6 +64,28 @@ def format_tanggal(value) -> str:
     if isinstance(hasil, str):
         return hasil
     return f"{hasil.day} {BULAN[hasil.month - 1]} {hasil.year}"
+
+
+def format_durasi(menit) -> str:
+    """Minutes as "1 j 30 mnt", for the printed rundown.
+
+    The vendor-facing counterpart of tampilan.format_durasi: same shape, same
+    rounding, same treatment of zero and of a whole hour — only the unit words
+    differ, so a printed sheet and the screen it came from stay comparable
+    line for line."""
+    if menit is None or str(menit).strip() == "":
+        return ""
+    try:
+        nilai = int(menit)
+    except (TypeError, ValueError):
+        return str(menit)
+
+    jam, sisa = divmod(nilai, 60)
+    if jam and sisa:
+        return f"{jam} j {sisa} mnt"
+    if jam:
+        return f"{jam} j"
+    return f"{sisa} mnt"
 
 
 def gabung_kategori(value) -> str:
