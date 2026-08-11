@@ -33,6 +33,11 @@ diterjemahkan jadi kalimat biasa.
 
 Alur: **brief → pilih kategori + centang vendor → preview → kirim → tracker**
 
+![Halaman tracker satu batch: 8 vendor, 6 terkirim, 2 gagal, dengan alasan gagal per baris](docs/tracker-detail.jpg)
+
+*Tracker satu batch. Yang gagal tidak menghentikan sisanya, dan alasannya
+ditampilkan sebagai kalimat biasa — error SMTP mentahnya tetap tersimpan.*
+
 ### 2. Penerbitan SPK
 
 Setelah vendor menang, SPK (Surat Perintah Kerja) diterbitkan langsung dari
@@ -61,6 +66,12 @@ karena acara yang molor tetap acara yang nyata. Halamannya bisa langsung
 dicetak: aturan `@media print` menyembunyikan seluruh chrome aplikasi dan
 menyisakan jadwalnya saja, seluruhnya dalam bahasa Indonesia karena lembar itu
 dipegang kru dan vendor di lokasi.
+
+![Rundown versi cetak: judul acara, lokasi, peringatan lewat batas venue, lalu tabel Jam / Kegiatan / Durasi / PIC](docs/rundown-cetak.jpg)
+
+*Halaman yang sama saat dicetak. Tanpa nav, tanpa tombol, hitam di atas putih,
+dan peringatan lewat batasnya jadi kalimat biasa supaya tetap terbaca kalau
+dicetak hitam-putih.*
 
 ## Stack
 

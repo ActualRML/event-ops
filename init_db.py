@@ -11,7 +11,11 @@ BASE_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = BASE_DIR / "db" / "schema.sql"
 SEED_PATH = BASE_DIR / "db" / "seed.sql"
 
-TABLES = ["categories", "vendors", "vendor_categories", "requests", "outbox", "spk"]
+# Every table in schema.sql, in dependency order. A table missing here is
+# still created — it just goes uncounted in the summary, which is how rundown
+# and rundown_item slipped past unnoticed.
+TABLES = ["categories", "vendors", "vendor_categories", "requests", "outbox",
+          "spk", "rundown", "rundown_item"]
 
 
 def main() -> int:
