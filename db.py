@@ -432,6 +432,168 @@ def spk_by_vendor(request_id: int) -> dict:
     return {r["vendor_id"]: r for r in list_spk_for_request(request_id)}
 
 
+def get_rundown(request_id: int) -> sqlite3.Row | None:
+    """The rundown for one request, or None. At most one exists — the column
+    is UNIQUE."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM rundown WHERE request_id = ?", (request_id,)
+        ).fetchone()
+
+
+def create_rundown(request_id: int, jam_mulai: str,
+                   batas_venue: str | None) -> int:
+    """Start a rundown for one request. Returns the new id. A second one for
+    the same request raises IntegrityError — UNIQUE(request_id)."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            """INSERT INTO rundown (request_id, jam_mulai, batas_venue)
+               VALUES (?, ?, ?)""",
+            (request_id, jam_mulai, batas_venue or None),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def update_rundown(rundown_id: int, jam_mulai: str,
+                   batas_venue: str | None) -> None:
+    """Overwrite the start time and venue limit. The items are untouched:
+    every displayed time is derived, so moving jam_mulai reschedules the
+    whole rundown without rewriting a single item row."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "UPDATE rundown SET jam_mulai = ?, batas_venue = ? WHERE id = ?",
+            (jam_mulai, batas_venue or None, rundown_id),
+        )
+        conn.commit()
+
+
+def list_items(rundown_id: int) -> list[sqlite3.Row]:
+    """Items in running order. urutan is contiguous from 1, so this order is
+    also the position shown to the user."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM rundown_item WHERE rundown_id = ? ORDER BY urutan",
+            (rundown_id,),
+        ).fetchall()
+
+
+def add_item(rundown_id: int, kegiatan: str, durasi_menit: int,
+             pic: str, catatan: str) -> int:
+    """Append one item at the end. Returns the new id.
+
+    Reading MAX(urutan) and inserting share one transaction, so two items
+    added at the same moment cannot claim the same position — the UNIQUE is
+    the backstop."""
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        berikutnya = conn.execute(
+            "SELECT COALESCE(MAX(urutan), 0) + 1 FROM rundown_item WHERE rundown_id = ?",
+            (rundown_id,),
+        ).fetchone()[0]
+        cur = conn.execute(
+            """INSERT INTO rundown_item
+                      (rundown_id, urutan, kegiatan, durasi_menit, pic, catatan)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (rundown_id, berikutnya, kegiatan, durasi_menit, pic, catatan),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def update_item(item_id: int, kegiatan: str, durasi_menit: int,
+                pic: str, catatan: str) -> None:
+    """Overwrite one item's content. urutan is not editable here — ordering
+    moves through move_item so the contiguity rule stays in one place."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            """UPDATE rundown_item
+                  SET kegiatan = ?, durasi_menit = ?, pic = ?, catatan = ?
+                WHERE id = ?""",
+            (kegiatan, durasi_menit, pic, catatan, item_id),
+        )
+        conn.commit()
+
+
+def delete_item(item_id: int) -> bool:
+    """Remove one item and close the gap it leaves, so urutan stays 1..n.
+
+    Returns True when a row was removed, False when the id does not exist,
+    so a route can 404 without looking the item up first.
+
+    The shift runs in two passes through negative values. UNIQUE(rundown_id,
+    urutan) would otherwise fire mid-statement when a row moves onto a
+    position its neighbour has not vacated yet; no real urutan is negative,
+    so the parking range is always free."""
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        baris = conn.execute(
+            "SELECT rundown_id, urutan FROM rundown_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if baris is None:
+            conn.commit()
+            return False
+
+        conn.execute("DELETE FROM rundown_item WHERE id = ?", (item_id,))
+        conn.execute(
+            """UPDATE rundown_item SET urutan = -(urutan - 1)
+                WHERE rundown_id = ? AND urutan > ?""",
+            (baris["rundown_id"], baris["urutan"]),
+        )
+        conn.execute(
+            "UPDATE rundown_item SET urutan = -urutan WHERE rundown_id = ? AND urutan < 0",
+            (baris["rundown_id"],),
+        )
+        conn.commit()
+        return True
+
+
+def move_item(item_id: int, direction: str) -> bool:
+    """Swap one item with its neighbour. direction is "up" or "down".
+
+    Returns True when the swap happened, False when nothing moved: an
+    unknown id, an unknown direction, or the first item asked to go up and
+    the last asked to go down. A route can treat False as "no change" and
+    decide for itself whether that is a 404 or a redirect.
+
+    The swap parks one row at urutan 0 first, for the same reason
+    delete_item uses negatives: the pair would otherwise collide on UNIQUE
+    halfway through."""
+    if direction not in ("up", "down"):
+        return False
+
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        baris = conn.execute(
+            "SELECT rundown_id, urutan FROM rundown_item WHERE id = ?", (item_id,)
+        ).fetchone()
+        if baris is None:
+            conn.commit()
+            return False
+
+        tetangga_urutan = baris["urutan"] + (-1 if direction == "up" else 1)
+        tetangga = conn.execute(
+            "SELECT id FROM rundown_item WHERE rundown_id = ? AND urutan = ?",
+            (baris["rundown_id"], tetangga_urutan),
+        ).fetchone()
+        # No neighbour means first item moving up or last moving down.
+        if tetangga is None:
+            conn.commit()
+            return False
+
+        conn.execute("UPDATE rundown_item SET urutan = 0 WHERE id = ?", (item_id,))
+        conn.execute(
+            "UPDATE rundown_item SET urutan = ? WHERE id = ?",
+            (baris["urutan"], tetangga["id"]),
+        )
+        conn.execute(
+            "UPDATE rundown_item SET urutan = ? WHERE id = ?",
+            (tetangga_urutan, item_id),
+        )
+        conn.commit()
+        return True
+
+
 def set_vendor_categories(vendor_id: int, category_ids) -> None:
     """Replace a vendor's category set. Delete and insert share one
     transaction so the vendor is never briefly uncategorised."""

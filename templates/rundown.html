@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Rundown — {{ permintaan.judul_acara }}{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h2>{{ permintaan.judul_acara }}</h2>
+  {# Same chip vocabulary as tracker detail: a labelled value per chip, the
+     value bold. The computed end time earns a chip because it is the number
+     everyone on the page is actually looking for. #}
+  <p class="chips">
+    <span class="chip">Rundown for request <span class="chip-angka">#{{ request_id }}</span></span>
+    <span class="chip">event <span class="chip-angka">{{ permintaan.tanggal_acara | date or "no date" }}</span></span>
+    {% if rundown %}
+    <span class="chip">starts <span class="chip-angka">{{ rundown.jam_mulai }}</span></span>
+    <span class="chip">ends <span class="chip-angka">{{ jadwal.jam_selesai }}</span></span>
+    <span class="chip"><span class="chip-angka">{{ baris|length }}</span> item{{ "s" if baris|length != 1 }}</span>
+    {% endif %}
+  </p>
+</hgroup>
+
+{% if errors %}
+<article>
+  <strong>Could not save.</strong> Check the fields flagged below.
+</article>
+{% endif %}
+
+{# A warning, not a blocker: running long is a real schedule that the venue
+   has to be told about, so nothing here is disabled. #}
+{% if jadwal and jadwal.lewat_batas %}
+<article class="peringatan">
+  <strong>This rundown runs past the venue limit.</strong>
+  It ends at {{ jadwal.jam_selesai }}, {{ jadwal.lebih_menit | duration }} after
+  the {{ rundown.batas_venue }} limit. Shorten an item, or start earlier.
+</article>
+{% endif %}
+
+<section>
+  {# Heading carries the state, the button stays "Save" — the same split the
+     vendor form uses for Add Vendor and Edit. #}
+  <h3>{% if rundown %}Schedule{% else %}Start the rundown{% endif %}</h3>
+  <form method="post" action="/tracker/{{ request_id }}/rundown"
+        class="form-rapat form-vendor">
+    <div class="grid-isian">
+      <label>
+        Start time
+        <input type="time" name="jam_mulai" value="{{ v_atur.jam_mulai }}"
+               {% if errors.jam_mulai %}aria-invalid="true"{% endif %}>
+        {% if errors.jam_mulai %}<small>{{ errors.jam_mulai }}</small>{% endif %}
+      </label>
+
+      <label>
+        Venue limit
+        <input type="time" name="batas_venue" value="{{ v_atur.batas_venue }}"
+               {% if errors.batas_venue %}aria-invalid="true"{% endif %}>
+        {% if errors.batas_venue %}<small>{{ errors.batas_venue }}</small>
+        {% else %}<small class="redup">Optional. When the venue has to be
+          cleared — a rundown past it is flagged, never blocked.</small>{% endif %}
+      </label>
+    </div>
+
+    <div class="baris-aksi">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+
+{% if rundown %}
+<section>
+  <h3>Running order</h3>
+  <table class="tabel">
+    {# Activity takes the width because it is the only column that runs long;
+       the notes line sits under it rather than in a column of its own. The two
+       action columns are sized to a pair of .btn-mini each. #}
+    <colgroup>
+      <col style="width: 5%">
+      <col style="width: 13%">
+      <col style="width: 26%">
+      <col style="width: 10%">
+      <col style="width: 13%">
+      <col style="width: 15%">
+      <col style="width: 18%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Time</th>
+        <th>Activity</th>
+        <th>Duration</th>
+        <th>PIC</th>
+        <th></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in baris %}
+      <tr>
+        <td class="angka">{{ b.item.urutan }}</td>
+        <td class="sel-teks">{{ b.mulai }}–{{ b.selesai }}</td>
+        <td>
+          <strong>{{ b.item.kegiatan }}</strong>
+          {# Notes as the row's secondary line, the same shape the vendor
+             picker uses for its contact line. #}
+          {% if b.item.catatan %}<div class="redup">{{ b.item.catatan }}</div>{% endif %}
+        </td>
+        {# Left-aligned: "1 h 30 min" is a formatted label, not a quantity to
+           line up decimal points on, so .angka would only fight the header. #}
+        <td>{{ b.item.durasi_menit | duration }}</td>
+        <td class="redup sel-teks">{{ b.item.pic or "—" }}</td>
+        <td class="aksi">
+          {# Disabled rather than hidden at the ends, so the pair keeps its
+             width and the column does not ripple row to row. #}
+          <div class="aksi-grup">
+            <form method="post" action="/tracker/{{ request_id }}/rundown/items/{{ b.item.id }}/move">
+              <input type="hidden" name="direction" value="up">
+              <button type="submit" class="secondary outline btn-mini"
+                      {% if loop.first %}disabled{% endif %}>Up</button>
+            </form>
+            <form method="post" action="/tracker/{{ request_id }}/rundown/items/{{ b.item.id }}/move">
+              <input type="hidden" name="direction" value="down">
+              <button type="submit" class="secondary outline btn-mini"
+                      {% if loop.last %}disabled{% endif %}>Down</button>
+            </form>
+          </div>
+        </td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            {# Edit reopens the form below with this row loaded — same fields,
+               so a second page would only duplicate them. #}
+            <a href="/tracker/{{ request_id }}/rundown?item={{ b.item.id }}"
+               role="button" class="secondary outline btn-mini">Edit</a>
+            {# The one irreversible action in the app, so the one that asks.
+               Plain inline handler on a plain form — the same mechanism as
+               lockSend in preview.html, and it leaves the POST and redirect
+               as an ordinary navigation.
+               tojson, not bare interpolation: the activity name is free text,
+               and an apostrophe in it would close the JS string and leave the
+               form submitting with no confirmation at all. tojson emits a
+               whole JS string literal, escaping any apostrophe to a unicode
+               escape, which is why the attribute itself is single-quoted. #}
+            <form method="post" action="/tracker/{{ request_id }}/rundown/items/{{ b.item.id }}/delete"
+                  onsubmit='return confirm({{ ("Remove “" ~ b.item.kegiatan ~ "” from the rundown? This cannot be undone.") | tojson }})'>
+              <button type="submit" class="outline btn-mini btn-mati">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="kosong">
+          No items yet. Add the first one below — every time on this page is
+          worked out from the start time and the durations, so nothing here
+          needs to be typed twice.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# Same shape as the tracker's batch line: a bold lead, then the counts, with
+     only the over-limit clause in red. #}
+  {% if baris %}
+  <p class="status-batch">
+    <strong>{{ baris|length }} item{{ "s" if baris|length != 1 }}.</strong>
+    {{ total_menit | duration }} in total, ending {{ jadwal.jam_selesai }}{% if jadwal.lewat_batas %},
+    <span class="status-gagal">{{ jadwal.lebih_menit | duration }} past the venue
+    limit</span>{% endif %}.
+  </p>
+  {% endif %}
+</section>
+
+<section>
+  <h3>{% if item_id %}Edit item{% else %}Add item{% endif %}</h3>
+  <form method="post"
+        action="/tracker/{{ request_id }}/rundown/items{% if item_id %}/{{ item_id }}{% endif %}"
+        class="form-rapat form-vendor">
+    <div class="grid-isian">
+      <label>
+        Activity
+        <input name="kegiatan" value="{{ v_item.kegiatan }}"
+               placeholder="e.g. Registrasi tamu"
+               {% if errors.kegiatan %}aria-invalid="true"{% endif %}>
+        {% if errors.kegiatan %}<small>{{ errors.kegiatan }}</small>{% endif %}
+      </label>
+
+      <label>
+        Duration (minutes)
+        {# Not type="number": the spinner is noise on a field that is always
+           typed, and a stray non-digit is caught server-side either way. #}
+        <input name="durasi_menit" value="{{ v_item.durasi_menit }}"
+               inputmode="numeric" placeholder="30"
+               {% if errors.durasi_menit %}aria-invalid="true"{% endif %}>
+        {% if errors.durasi_menit %}<small>{{ errors.durasi_menit }}</small>{% endif %}
+      </label>
+
+      <label>
+        PIC
+        <input name="pic" value="{{ v_item.pic }}">
+      </label>
+    </div>
+
+    <label>
+      Notes
+      <textarea name="catatan" rows="2">{{ v_item.catatan }}</textarea>
+    </label>
+
+    <div class="baris-aksi">
+      <button type="submit">Save</button>
+      {% if item_id %}
+      <a href="/tracker/{{ request_id }}/rundown" role="button"
+         class="secondary outline">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<div class="baris-aksi-kanan">
+  <a href="/tracker/{{ request_id }}" role="button" class="secondary outline">Back to request</a>
+</div>
+{% endblock %}

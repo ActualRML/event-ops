@@ -46,6 +46,27 @@ def format_datetime(value) -> str:
     return f"{waktu.day} {MONTHS[waktu.month - 1]} {waktu.year}, {waktu:%H:%M}"
 
 
+def format_durasi(menit) -> str:
+    """Minutes as "1 h 30 min", for the rundown's duration column and totals.
+
+    Stays in hours and minutes: a rundown item is a slot in a day, so a day
+    unit would never be reached and would only read oddly. Zero is "0 min"
+    rather than blank — a total of nothing is a real answer here."""
+    if menit is None or str(menit).strip() == "":
+        return ""
+    try:
+        nilai = int(menit)
+    except (TypeError, ValueError):
+        return str(menit)
+
+    jam, sisa = divmod(nilai, 60)
+    if jam and sisa:
+        return f"{jam} h {sisa} min"
+    if jam:
+        return f"{jam} h"
+    return f"{sisa} min"
+
+
 # Plain labels for the tracker, keyed by exception class name. Names are
 # aiosmtplib's, not smtplib's — the two differ (aiosmtplib has SMTPNotSupported
 # where smtplib has SMTPNotSupportedError, and it adds its own TimeoutError).

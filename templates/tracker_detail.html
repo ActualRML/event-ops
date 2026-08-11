@@ -20,6 +20,7 @@
 
 <div class="baris-aksi-kanan">
   <a href="/tracker" role="button" class="secondary outline">All requests</a>
+  <a href="/tracker/{{ request_id }}/rundown" role="button" class="secondary outline">Rundown</a>
   <form method="post" action="/tracker/{{ request_id }}/retry">
     <button type="submit" {% if not p.failed and not p.draft %}disabled{% endif %}>
       Retry failed

@@ -67,6 +67,32 @@ CREATE TABLE spk (
     UNIQUE (request_id, vendor_id)
 );
 
+-- One rundown per event, hence UNIQUE on request_id. jam_mulai and
+-- batas_venue are HH:MM wall-clock strings; batas_venue is optional.
+-- No column here stores a computed time — every start and end time is
+-- derived from jam_mulai plus cumulative duration, never persisted.
+CREATE TABLE rundown (
+    id          INTEGER PRIMARY KEY,
+    request_id  INTEGER NOT NULL UNIQUE REFERENCES requests(id) ON DELETE CASCADE,
+    jam_mulai   TEXT NOT NULL,
+    batas_venue TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+-- urutan is 1-based and contiguous: delete and move renumber so there is
+-- never a gap. UNIQUE(rundown_id, urutan) is what forces that discipline,
+-- and doubles as the lookup index for list_items.
+CREATE TABLE rundown_item (
+    id           INTEGER PRIMARY KEY,
+    rundown_id   INTEGER NOT NULL REFERENCES rundown(id) ON DELETE CASCADE,
+    urutan       INTEGER NOT NULL,
+    kegiatan     TEXT NOT NULL,
+    durasi_menit INTEGER NOT NULL CHECK (durasi_menit > 0),
+    pic          TEXT,
+    catatan      TEXT,
+    UNIQUE (rundown_id, urutan)
+);
+
 CREATE INDEX idx_vendor_categories_category ON vendor_categories(category_id);
 CREATE INDEX idx_outbox_request ON outbox(request_id);
 CREATE INDEX idx_outbox_status ON outbox(status);

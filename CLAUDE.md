@@ -61,11 +61,13 @@ Language — the split is by audience, not by file:
       dokumen.py     SPK .docx generation
       terbilang.py   number to Indonesian words
       penomoran.py   nomor surat formatting and sequence
+      rundown.py     schedule arithmetic, pure functions
     routes/          one APIRouter per area
       vendors.py     /, /vendors, /categories
       send.py        /send and its subpaths
       tracker.py     /tracker, detail, retry
       spk.py         /tracker/{id}/spk/...
+      rundown.py     /tracker/{id}/rundown and its items
     templates/  static/  email_templates/  db/
 
 Import direction is one-way. core/ may import config and other core
@@ -100,8 +102,9 @@ format the same values; they differ only in which audience reads the result.
   messages with no migration, and the full server response is still
   available in the cell's tooltip.
 
-All three of tampilan's functions are registered as Jinja filters
-(date, datetime, error_message) and are used by templates only.
+All four of tampilan's functions are registered as Jinja filters
+(date, datetime, error_message, duration) and are used by templates only.
+format_durasi renders stored minutes as "1 h 30 min" for the rundown.
 
 mailer.kirim_email belongs to the mailer API, not the Send page family —
 it is also called by cek_email.py. The send_* rename covered the page's
@@ -370,8 +373,9 @@ they sit in an action row:
    border and text. Cancel, Back, All requests, Add Category, and every
    in-table action button.
 3. **Muted (`.btn-mati`)** — transparent on `--pico-muted-border-color`,
-   muted text, turning `#b3261e` on hover/focus only. Exactly one use:
-   Deactivate/Activate in the vendor table.
+   muted text, turning `#b3261e` on hover/focus only. The destructive
+   in-table action: Deactivate/Activate in the vendor table, Remove in
+   the rundown table.
 
 Row containers:
 
@@ -408,6 +412,8 @@ One look everywhere via `.tabel`; `table-layout: fixed` with a per-table
 - tracker: 6/32/16/18/18/10
 - tracker detail: 19/11/17/11/13/13/16
 - preview: 34/40/26
+- rundown: 5/13/26/10/13/15/18 — the last two columns are a pair of
+  `.btn-mini` each, and 15/18 is what stops "Down" and "Remove" clipping
 
 Cells `.35rem .6rem` (7px/12px), `vertical-align: middle`,
 `overflow-wrap: break-word`. First and last columns zero their outer
@@ -444,9 +450,13 @@ Total inherits.
 - **Validation** — bare Pico `<article>`: white, radius 5px, 20px
   padding, 20px below, Pico's own large shadow. Bold lead sentence, then
   one plain line. Same shape on every form page.
-- **Blocking** — `article.peringatan` adds `border-left: 3px #b3261e`.
-  SPK form only, when the vendor or request is missing required data;
-  the submit is disabled alongside it.
+- **Serious, as opposed to routine** — `article.peringatan` adds
+  `border-left: 3px #b3261e`. Two uses, and they differ in whether they
+  block: on the SPK form the vendor or request is missing required data
+  and the submit is disabled alongside it; on the rundown the schedule
+  runs past the venue limit, which is a real schedule to be flagged, not
+  an error, so nothing is disabled. The red rule marks weight, not a
+  blocked state — read the surrounding controls for that.
 - **Empty table** — a single `<td class="kosong" colspan=…>`: muted,
   italic, `padding-block: 30px`. Every empty state is written as
   a sentence plus the next action ("Start with 'Add Vendor' — …"), and
