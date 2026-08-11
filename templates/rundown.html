@@ -10,6 +10,12 @@
   <p class="chips">
     <span class="chip">Rundown for request <span class="chip-angka">#{{ request_id }}</span></span>
     <span class="chip">event <span class="chip-angka">{{ permintaan.tanggal_acara | date or "no date" }}</span></span>
+    {# Carried for the printout, which is read away from the screen and has to
+       say where to turn up. Omitted rather than shown as a dash when the brief
+       never had one. #}
+    {% if permintaan.lokasi %}
+    <span class="chip">location <span class="chip-angka">{{ permintaan.lokasi }}</span></span>
+    {% endif %}
     {% if rundown %}
     <span class="chip">starts <span class="chip-angka">{{ rundown.jam_mulai }}</span></span>
     <span class="chip">ends <span class="chip-angka">{{ jadwal.jam_selesai }}</span></span>
@@ -67,7 +73,11 @@
 {% if rundown %}
 <section>
   <h3>Running order</h3>
-  <table class="tabel">
+  {# tabel-rundown exists only so the print block can drop this table's two
+     action columns by position. Keying that off td.aksi + th:empty instead
+     would misfire elsewhere: preview has an empty header over a data cell,
+     and tracker detail has a labelled "SPK" header over an action cell. #}
+  <table class="tabel tabel-rundown">
     {# Activity takes the width because it is the only column that runs long;
        the notes line sits under it rather than in a column of its own. The two
        action columns are sized to a pair of .btn-mini each. #}
@@ -80,12 +90,19 @@
       <col style="width: 15%">
       <col style="width: 18%">
     </colgroup>
+    {# Dual headers in one row. The screen is staff-facing and stays English;
+       the printout is carried by crew and vendors on site, so it follows the
+       vendor-facing language rule, like the SPK. Both labels sit inside the
+       same <th> — a second table for print would be the copy that drifts.
+       # and PIC read the same either way and carry no spans. Catatan has no
+       header: it prints as the second line inside Kegiatan, where it already
+       lives on screen. #}
     <thead>
       <tr>
         <th>#</th>
-        <th>Time</th>
-        <th>Activity</th>
-        <th>Duration</th>
+        <th><span class="layar">Time</span><span class="cetak">Jam</span></th>
+        <th><span class="layar">Activity</span><span class="cetak">Kegiatan</span></th>
+        <th><span class="layar">Duration</span><span class="cetak">Durasi</span></th>
         <th>PIC</th>
         <th></th>
         <th></th>
@@ -216,5 +233,9 @@
 
 <div class="baris-aksi-kanan">
   <a href="/tracker/{{ request_id }}" role="button" class="secondary outline">Back to request</a>
+  {# Same page, printed — no print route, so there is no second copy to drift.
+     Inline handler, as with lockSend and the Remove confirmation. #}
+  <button type="button" class="secondary outline"
+          onclick="window.print()">Print</button>
 </div>
 {% endblock %}

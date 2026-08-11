@@ -492,6 +492,43 @@ Measured on a rendered preview, not read off the stylesheet.
   `:first-of-type` and draws no top border; `Recipients` draws its
   `1px #eef0f3` divider with 16px above.
 
+### Print
+
+The rundown is the one page meant to leave the screen, and it prints from
+the screen DOM — there is no print route, so there is no second copy to
+drift. The `@media print` block at the end of `base.html` hides everything
+that is not the schedule: nav, footer, both editing forms (picked by
+`section:has(.form-rapat)`, not by position), every action row, and the
+rundown table's two action columns. px throughout, as everywhere else —
+in print 96px is one inch, and `@page` margin is 48px.
+
+Colour is the first thing a mono printer discards, so nothing may depend
+on it: every muted value returns to black, and the over-limit warning
+prints as a plain sentence with a bold lead rather than a red-ruled card.
+
+Language follows the audience, not the file. The printed sheet is carried
+by crew and vendors on site, so it falls under the vendor-facing rule
+alongside the SPK, while the screen stays staff-facing English. Both
+labels live in one `<th>`: `.layar` shows on screen, `.cetak` in print.
+`#` and `PIC` read the same either way and carry no spans. Catatan has no
+header of its own — it prints as the second line inside Kegiatan, which is
+where it sits on screen too, so no value is duplicated in the markup.
+
+Column hiding is scoped to `.tabel-rundown` rather than keyed off
+`td.aksi` + `th:empty`, because that pairing misfires elsewhere: preview
+has an empty header over a data cell, and tracker detail has a labelled
+`SPK` header over an action cell.
+
+**The one `!important` in the codebase** — `.tabel-rundown col { width:
+auto !important }` — is a reasoned exception, not a precedent. The column
+widths are inline `style` attributes on `<col>`, which no stylesheet rule
+can outrank; without releasing them the two hidden action columns go on
+reserving a third of the table and the five printed columns stay squeezed.
+Any future `!important` has to clear the same bar: the value it overrides
+must be genuinely unreachable by the cascade — an inline style, or a
+third-party rule that cannot be edited — not merely tedious to outweigh.
+If a selector can win on specificity or source order, it must.
+
 ### Spacing scale actually in use
 
 `2 · 4 · 6 · 8 · 10 · 12 · 14 · 16 · 20 · 24 · 30 · 32`

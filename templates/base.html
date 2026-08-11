@@ -455,6 +455,85 @@
     button:disabled, [role="button"]:disabled, button[disabled] {
       opacity: .45; cursor: not-allowed; filter: grayscale(35%);
     }
+
+    /* Screen and print labels sharing one element. Language follows the
+       audience: the interface is staff-facing English, the printed rundown
+       is read on site by crew and vendors and so goes Indonesian, the same
+       rule the SPK follows. .cetak is the printed half and stays out of the
+       way until the print block turns the pair around. */
+    .cetak { display: none; }
+
+    /* ---- Print --------------------------------------------------------
+       The rundown is the one page that gets carried around on paper, and it
+       prints from the screen DOM — there is no print route, so there is no
+       second copy to drift out of step. Everything that is not the schedule
+       is hidden here.
+       px throughout, per the units rule. In print 96px is one inch, so the
+       numbers stay as literal as they are on screen. */
+    @media print {
+      /* 48px = half an inch on every edge. */
+      @page { margin: 48px; }
+
+      /* Paper is white and toner is black. The grey page, the panel's
+         shadow, border and radius are all screen furniture. */
+      body { background: #fff; color: #000; display: block; min-height: 0; }
+      main.container {
+        background: #fff; border: none; border-radius: 0; box-shadow: none;
+        max-width: none; margin: 0; padding: 0;
+      }
+
+      /* App chrome. */
+      body > header.bilah, body > footer.kaki { display: none; }
+
+      /* The labels change places: English off, Indonesian on. */
+      .layar { display: none; }
+      .cetak { display: inline; }
+
+      /* Both editing forms, heading and all — a printout is read, not filled
+         in. :has() picks the sections by what they hold rather than by
+         position, so a section added later cannot silently shift this. */
+      main section:has(.form-rapat) { display: none; }
+
+      /* Every action row in the app, including this page's Print button. */
+      .baris-aksi, .baris-aksi-kanan, .aksi-halaman { display: none; }
+
+      /* The rundown's two action columns. Scoped to this table: the colgroup
+         widths are inline, so they have to be released before the five
+         remaining columns can take the space back. */
+      .tabel-rundown { table-layout: auto; }
+      .tabel-rundown col { width: auto !important; }
+      .tabel-rundown :is(th, td):nth-child(6),
+      .tabel-rundown :is(th, td):nth-child(7) { display: none; }
+
+      /* Headers repeat on every sheet; no row is split across two. */
+      .tabel thead { display: table-header-group; }
+      .tabel tr { break-inside: avoid; }
+
+      /* Grey on white is the first thing a mono printer loses, so every
+         muted value — the notes line under each activity, the PIC column,
+         the totals — comes back to black. */
+      main h2, main section > h3, .chip, .chip-angka, .tabel,
+      .tabel th, .tabel td, .redup, .kosong,
+      .status-batch, .status-batch strong { color: #000; }
+      .tabel th { border-bottom-color: #000; }
+      .tabel td { border-bottom-color: #999; }
+
+      /* Chips lose their pills and read as a run of plain context under the
+         title. normal wrapping because a venue name is long and paper is
+         narrower than the screen. */
+      .chips { gap: 4px 16px; }
+      .chip { border: none; background: none; padding: 0;
+              white-space: normal; }
+
+      /* The over-limit warning prints as a sentence, not a red-ruled card:
+         colour is exactly what a black-and-white printer throws away, so the
+         bold lead has to carry it instead. */
+      article.peringatan {
+        border: none; box-shadow: none; background: none;
+        padding: 0; margin: 0 0 12px; color: #000;
+      }
+      .status-gagal { color: #000; font-weight: 600; }
+    }
   </style>
 </head>
 <body>
