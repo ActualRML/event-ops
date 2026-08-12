@@ -15,7 +15,7 @@ from deps import parse_ids, templates
 router = APIRouter()
 
 BRIEF_KOSONG = {
-    "judul_acara": "", "tanggal_acara": "", "lokasi": "",
+    "judul_acara": "", "tanggal_acara": "", "lokasi": "", "kategori": "",
     "kebutuhan": "", "deadline": "", "pengirim_nama": "",
 }
 
@@ -31,12 +31,54 @@ def parse_tanggal(teks: str):
         return None
 
 
-def validasi_brief(brief: dict, vendor_ids: list[int]) -> dict:
-    """Runs before rendering. Returns {field: message}."""
+def pilih_event(event_id_raw: str, brief: dict):
+    """Resolve the event selector into (event_id, event row, brief).
+
+    Empty means a new event, and the brief keeps the title, date and location
+    that were typed. Choosing an existing event overrides those three from its
+    own row — the event owns them now, so a second batch cannot quietly fork a
+    different title for the same day. An id that no longer exists falls back to
+    the new-event path, where validation asks for a title."""
+    ids = parse_ids([event_id_raw])
+    acara = db.get_event(ids[0]) if ids else None
+    if acara is None:
+        return None, None, brief
+
+    gabungan = dict(brief)
+    gabungan["judul_acara"] = acara["judul_acara"]
+    gabungan["tanggal_acara"] = acara["tanggal_acara"] or ""
+    gabungan["lokasi"] = acara["lokasi"] or ""
+    return acara["id"], acara, gabungan
+
+
+def pilih_kategori(category_id_raw: str):
+    """Resolve the category selector into (id, row), or (None, None).
+
+    One send is one category, so this is a field of the batch — the vendor
+    list follows from it rather than the other way round."""
+    ids = parse_ids([category_id_raw])
+    if not ids:
+        return None, None
+    for c in db.list_categories():
+        if c["id"] == ids[0]:
+            return c["id"], c
+    return None, None
+
+
+def validasi_brief(brief: dict, vendor_ids: list[int],
+                   event_baru: bool = True,
+                   kategori_id: int | None = None) -> dict:
+    """Runs before rendering. Returns {field: message}.
+
+    event_baru False means an existing event was chosen, so the event fields
+    came from the database rather than the form and are not the user's to
+    fill in on this page."""
     errors = {}
 
-    if not brief["judul_acara"].strip():
+    if event_baru and not brief["judul_acara"].strip():
         errors["judul_acara"] = "Event title is required."
+    if kategori_id is None:
+        errors["kategori"] = "Pick the category this batch is for."
     if not brief["kebutuhan"].strip():
         errors["kebutuhan"] = "Requirements are required."
     if not vendor_ids:
@@ -61,19 +103,15 @@ def validasi_brief(brief: dict, vendor_ids: list[int]) -> dict:
 
 def send_context(request: Request, brief: dict, selected_ids: list[int],
                   category_id: int | None, errors: dict,
-                  templat: dict | None = None) -> dict:
+                  templat: dict | None = None,
+                  event_id: int | None = None, acara=None) -> dict:
     """Context for send.html. Rebuilds the hidden container from selected_ids
     so a validation bounce never costs the user their selection. templat holds
     the edited email templates when there are any; empty strings mean the file
     defaults still apply."""
     categories = db.list_categories()
-    if category_id is None and categories:
-        category_id = categories[0]["id"]
 
-    terpilih = [
-        {"id": vid, "kategori": ",".join(str(c) for c in db.get_vendor_categories(vid))}
-        for vid in selected_ids
-    ]
+    terpilih = [{"id": vid} for vid in selected_ids]
 
     return {
         "request": request,
@@ -85,6 +123,11 @@ def send_context(request: Request, brief: dict, selected_ids: list[int],
         "brief": brief,
         "errors": errors,
         "templat": templat or {"subject": "", "body": ""},
+        # The selector and, when one is chosen, the row behind it — so a
+        # validation bounce comes back with the same event still selected.
+        "events": db.list_events(),
+        "event_id": event_id,
+        "acara": acara,
     }
 
 
@@ -99,6 +142,7 @@ async def send_form(request: Request):
 @router.post("/send/back")
 async def send_back(
     request: Request,
+    event_id: str = Form(""),
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
     lokasi: str = Form(""),
@@ -118,6 +162,9 @@ async def send_back(
         "lokasi": lokasi, "kebutuhan": kebutuhan,
         "deadline": deadline, "pengirim_nama": pengirim_nama,
     }
+    acara_id, acara, brief = pilih_event(event_id, brief)
+    kategori_id, kategori_row = pilih_kategori(category_id)
+    brief["kategori"] = kategori_row["nama"] if kategori_row else ""
     ids = list(dict.fromkeys(parse_ids(vendor_ids)))
     kategori = parse_ids([category_id])
 
@@ -127,6 +174,7 @@ async def send_back(
         send_context(
             request, brief, ids, kategori[0] if kategori else None, {},
             {"subject": subject_template, "body": body_template},
+            event_id=acara_id, acara=acara,
         ),
     )
 
@@ -134,6 +182,7 @@ async def send_back(
 @router.post("/send/preview")
 async def send_preview(
     request: Request,
+    event_id: str = Form(""),
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
     lokasi: str = Form(""),
@@ -150,6 +199,9 @@ async def send_preview(
         "lokasi": lokasi, "kebutuhan": kebutuhan,
         "deadline": deadline, "pengirim_nama": pengirim_nama,
     }
+    acara_id, acara, brief = pilih_event(event_id, brief)
+    kategori_id, kategori_row = pilih_kategori(category_id)
+    brief["kategori"] = kategori_row["nama"] if kategori_row else ""
     # dict.fromkeys dedupes while keeping click order; the first id drives the example.
     ids = list(dict.fromkeys(parse_ids(vendor_ids)))
     kategori_aktif = parse_ids([category_id])
@@ -159,7 +211,8 @@ async def send_preview(
     if not vendors:
         ids = []
 
-    errors = validasi_brief(brief, ids)
+    errors = validasi_brief(brief, ids, event_baru=acara_id is None,
+                             kategori_id=kategori_id)
     if errors:
         return templates.TemplateResponse(
             request,
@@ -167,6 +220,7 @@ async def send_preview(
             send_context(
                 request, brief, ids, kategori_aktif, errors,
                 {"subject": subject_template, "body": body_template},
+                event_id=acara_id, acara=acara,
             ),
             status_code=422,
         )
@@ -184,8 +238,7 @@ async def send_preview(
             subject_template,
             body_template,
             brief,
-            {"nama_pt": contoh["nama_pt"], "pic_nama": contoh["pic_nama"],
-             "kategori": contoh["kategori"]},
+            db.konteks_vendor(contoh, brief["kategori"]),
         )
     except Exception as e:
         render_error = f"{type(e).__name__}: {e}"
@@ -195,6 +248,7 @@ async def send_preview(
         "preview.html",
         {
             "brief": brief,
+            "event_id": acara_id,
             "vendors": vendors,
             "vendor_ids": [v["id"] for v in vendors],
             "category_id": kategori_aktif or "",
@@ -229,12 +283,14 @@ async def send_vendors(
 @router.post("/send/dispatch")
 async def send_dispatch(
     request: Request,
+    event_id: str = Form(""),
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
     lokasi: str = Form(""),
     kebutuhan: str = Form(""),
     deadline: str = Form(""),
     pengirim_nama: str = Form(""),
+    category_id: str = Form(""),
     vendor_ids: list[str] = Form([]),
     subject_template: str = Form(""),
     body_template: str = Form(""),
@@ -246,6 +302,9 @@ async def send_dispatch(
         "lokasi": lokasi, "kebutuhan": kebutuhan,
         "deadline": deadline, "pengirim_nama": pengirim_nama,
     }
+    acara_id, acara, brief = pilih_event(event_id, brief)
+    kategori_id, kategori_row = pilih_kategori(category_id)
+    brief["kategori"] = kategori_row["nama"] if kategori_row else ""
     ids = list(dict.fromkeys(parse_ids(vendor_ids)))
     lama = parse_ids([request_id])
 
@@ -263,13 +322,15 @@ async def send_dispatch(
         tasks.schedule_batch(existing)
         return RedirectResponse(f"/tracker/{existing}", status_code=303)
 
-    errors = validasi_brief(brief, ids)
+    errors = validasi_brief(brief, ids, event_baru=acara_id is None,
+                             kategori_id=kategori_id)
     if errors:
         return templates.TemplateResponse(
             request, "send.html",
             send_context(
                 request, brief, ids, None, errors,
                 {"subject": subject_template, "body": body_template},
+                event_id=acara_id, acara=acara,
             ),
             status_code=422,
         )
@@ -286,14 +347,15 @@ async def send_dispatch(
             continue
         subject, _ = renderer.render_email(
             subject_template, body_template, brief,
-            {"nama_pt": vendor["nama_pt"], "pic_nama": vendor["pic_nama"],
-             "kategori": vendor["kategori"]},
+            db.konteks_vendor(vendor, brief["kategori"]),
         )
         subjects[vendor_id] = subject
 
     try:
         with closing(db.get_conn()) as conn:
-            baru = db.create_request(brief, subject_template, body_template, conn=conn)
+            baru = db.create_request(brief, subject_template, body_template,
+                                     category_id=kategori_id,
+                                     event_id=acara_id, conn=conn)
             db.create_outbox_rows(baru, ids, subjects=subjects, conn=conn)
             conn.commit()
     except sqlite3.IntegrityError as e:

@@ -53,6 +53,9 @@
    and requests.subject_template/body_template still records what was sent.
    This form only carries the brief and the vendor selection. #}
 <form id="form-preview" method="post" action="/send/preview">
+  {# Which event this batch attaches to. Empty means the brief below is
+     creating one. #}
+  <input type="hidden" name="event_id" value="{{ event_id or '' }}">
   <input type="hidden" name="judul_acara" value="{{ brief.judul_acara }}">
   <input type="hidden" name="tanggal_acara" value="{{ brief.tanggal_acara }}">
   <input type="hidden" name="lokasi" value="{{ brief.lokasi }}">

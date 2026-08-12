@@ -20,7 +20,9 @@
 
 <div class="baris-aksi-kanan">
   <a href="/tracker" role="button" class="secondary outline">All requests</a>
-  <a href="/tracker/{{ request_id }}/rundown" role="button" class="secondary outline">Rundown</a>
+  {# By event, not by batch: a second quote round for the same day reaches the
+     same running order. #}
+  <a href="/events/{{ permintaan.event_id }}/rundown" role="button" class="secondary outline">Rundown</a>
   <form method="post" action="/tracker/{{ request_id }}/retry">
     <button type="submit" {% if not p.failed and not p.draft %}disabled{% endif %}>
       Retry failed

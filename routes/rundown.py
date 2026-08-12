@@ -54,26 +54,30 @@ def parse_durasi(raw: str):
     return nilai, None
 
 
-def muat(request_id: int):
-    """The request and its rundown, if it has one yet."""
-    permintaan = db.request_detail(request_id)
-    if permintaan is None:
-        raise HTTPException(status_code=404, detail="Request not found")
-    return permintaan, db.get_rundown(request_id)
+def muat(event_id: int):
+    """The event and its rundown, if it has one yet.
+
+    Keyed on the event, not on a batch: an event quoted in two rounds still
+    has one running order, and reaching it through either batch has to land
+    on the same row."""
+    acara = db.get_event(event_id)
+    if acara is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return acara, db.get_rundown(event_id)
 
 
 def muat_item(rundown, item_id: int):
     """One item, checked against this rundown. An id from another event is a
     404, not somebody else's row rendered into this page."""
     if rundown is None:
-        raise HTTPException(status_code=404, detail="No rundown for this request")
+        raise HTTPException(status_code=404, detail="No rundown for this event")
     for item in db.list_items(rundown["id"]):
         if item["id"] == item_id:
             return item
     raise HTTPException(status_code=404, detail="Item not found in this rundown")
 
 
-def rundown_context(request_id: int, permintaan, rundown, *, item_id=None,
+def rundown_context(event_id: int, acara, rundown, *, item_id=None,
                     v_atur=None, v_item=None, errors=None) -> dict:
     """Everything the template renders.
 
@@ -113,8 +117,8 @@ def rundown_context(request_id: int, permintaan, rundown, *, item_id=None,
         }
 
     return {
-        "request_id": request_id,
-        "permintaan": permintaan,
+        "event_id": event_id,
+        "acara": acara,
         "rundown": rundown,
         "baris": baris,
         "jadwal": hasil,
@@ -126,29 +130,29 @@ def rundown_context(request_id: int, permintaan, rundown, *, item_id=None,
     }
 
 
-@router.get("/tracker/{request_id}/rundown")
-async def rundown_page(request: Request, request_id: int, item: int | None = None):
-    permintaan, r = muat(request_id)
+@router.get("/events/{event_id}/rundown")
+async def rundown_page(request: Request, event_id: int, item: int | None = None):
+    acara, r = muat(event_id)
     # A stale ?item= from a deleted row would otherwise 404 the whole page.
     if item is not None and (r is None or not any(
             i["id"] == item for i in db.list_items(r["id"]))):
-        return RedirectResponse(f"/tracker/{request_id}/rundown", status_code=303)
+        return RedirectResponse(f"/events/{event_id}/rundown", status_code=303)
 
     return templates.TemplateResponse(
         request, "rundown.html",
-        rundown_context(request_id, permintaan, r, item_id=item),
+        rundown_context(event_id, acara, r, item_id=item),
     )
 
 
-@router.post("/tracker/{request_id}/rundown")
+@router.post("/events/{event_id}/rundown")
 async def rundown_settings(
     request: Request,
-    request_id: int,
+    event_id: int,
     jam_mulai: str = Form(""),
     batas_venue: str = Form(""),
 ):
     """Create the rundown, or overwrite its start time and venue limit."""
-    permintaan, r = muat(request_id)
+    acara, r = muat(event_id)
     v_atur = {"jam_mulai": jam_mulai, "batas_venue": batas_venue}
 
     errors = {}
@@ -162,30 +166,30 @@ async def rundown_settings(
     if errors:
         return templates.TemplateResponse(
             request, "rundown.html",
-            rundown_context(request_id, permintaan, r, v_atur=v_atur,
+            rundown_context(event_id, acara, r, v_atur=v_atur,
                             errors=errors),
             status_code=422,
         )
 
     if r is None:
-        db.create_rundown(request_id, mulai, batas)
+        db.create_rundown(event_id, mulai, batas)
     else:
         db.update_rundown(r["id"], mulai, batas)
-    return RedirectResponse(f"/tracker/{request_id}/rundown", status_code=303)
+    return RedirectResponse(f"/events/{event_id}/rundown", status_code=303)
 
 
-@router.post("/tracker/{request_id}/rundown/items")
+@router.post("/events/{event_id}/rundown/items")
 async def item_add(
     request: Request,
-    request_id: int,
+    event_id: int,
     kegiatan: str = Form(""),
     durasi_menit: str = Form(""),
     pic: str = Form(""),
     catatan: str = Form(""),
 ):
-    permintaan, r = muat(request_id)
+    acara, r = muat(event_id)
     if r is None:
-        raise HTTPException(status_code=404, detail="No rundown for this request")
+        raise HTTPException(status_code=404, detail="No rundown for this event")
 
     v_item = {"kegiatan": kegiatan, "durasi_menit": durasi_menit,
               "pic": pic, "catatan": catatan}
@@ -199,26 +203,26 @@ async def item_add(
     if errors:
         return templates.TemplateResponse(
             request, "rundown.html",
-            rundown_context(request_id, permintaan, r, v_item=v_item,
+            rundown_context(event_id, acara, r, v_item=v_item,
                             errors=errors),
             status_code=422,
         )
 
     db.add_item(r["id"], kegiatan.strip(), menit, pic.strip(), catatan.strip())
-    return RedirectResponse(f"/tracker/{request_id}/rundown", status_code=303)
+    return RedirectResponse(f"/events/{event_id}/rundown", status_code=303)
 
 
-@router.post("/tracker/{request_id}/rundown/items/{item_id}")
+@router.post("/events/{event_id}/rundown/items/{item_id}")
 async def item_update(
     request: Request,
-    request_id: int,
+    event_id: int,
     item_id: int,
     kegiatan: str = Form(""),
     durasi_menit: str = Form(""),
     pic: str = Form(""),
     catatan: str = Form(""),
 ):
-    permintaan, r = muat(request_id)
+    acara, r = muat(event_id)
     muat_item(r, item_id)
 
     v_item = {"kegiatan": kegiatan, "durasi_menit": durasi_menit,
@@ -233,28 +237,28 @@ async def item_update(
     if errors:
         return templates.TemplateResponse(
             request, "rundown.html",
-            rundown_context(request_id, permintaan, r, item_id=item_id,
+            rundown_context(event_id, acara, r, item_id=item_id,
                             v_item=v_item, errors=errors),
             status_code=422,
         )
 
     db.update_item(item_id, kegiatan.strip(), menit, pic.strip(), catatan.strip())
-    return RedirectResponse(f"/tracker/{request_id}/rundown", status_code=303)
+    return RedirectResponse(f"/events/{event_id}/rundown", status_code=303)
 
 
-@router.post("/tracker/{request_id}/rundown/items/{item_id}/delete")
-async def item_delete(request_id: int, item_id: int):
-    _, r = muat(request_id)
+@router.post("/events/{event_id}/rundown/items/{item_id}/delete")
+async def item_delete(event_id: int, item_id: int):
+    _, r = muat(event_id)
     muat_item(r, item_id)
     db.delete_item(item_id)
-    return RedirectResponse(f"/tracker/{request_id}/rundown", status_code=303)
+    return RedirectResponse(f"/events/{event_id}/rundown", status_code=303)
 
 
-@router.post("/tracker/{request_id}/rundown/items/{item_id}/move")
-async def item_move(request_id: int, item_id: int, direction: str = Form("")):
+@router.post("/events/{event_id}/rundown/items/{item_id}/move")
+async def item_move(event_id: int, item_id: int, direction: str = Form("")):
     """Swap one item with its neighbour. Already at the end is not an error —
     db.move_item returns False and the page simply comes back unchanged."""
-    _, r = muat(request_id)
+    _, r = muat(event_id)
     muat_item(r, item_id)
     db.move_item(item_id, direction)
-    return RedirectResponse(f"/tracker/{request_id}/rundown", status_code=303)
+    return RedirectResponse(f"/events/{event_id}/rundown", status_code=303)

@@ -19,33 +19,67 @@
   {# No template fields ride along: the preview screen no longer edits them, so
      the routes always fall back to the files in email_templates/. #}
   <section>
-    <h3>Event brief</h3>
+    <h3>Event</h3>
 
+    {# One event can be quoted in several rounds, so the first question is
+       whether this batch belongs to an event that already exists. Empty value
+       means a new one, and the fields below it appear. #}
     <label>
-      Event title
-      <input name="judul_acara" value="{{ brief.judul_acara }}"
-             {% if errors.judul_acara %}aria-invalid="true"{% endif %}>
-      {% if errors.judul_acara %}<small>{{ errors.judul_acara }}</small>{% endif %}
+      Choose event
+      <select id="pilih-event" name="event_id" onchange="ubahEvent()">
+        <option value="">New event</option>
+        {% for e in events %}
+        {# The details ride on the option so switching events fills the block
+           below without a round trip. The server still owns the values that
+           get saved — these are for display only. #}
+        <option value="{{ e.id }}" {% if e.id == event_id %}selected{% endif %}
+                data-judul="{{ e.judul_acara }}"
+                data-tanggal="{{ (e.tanggal_acara | date) if e.tanggal_acara else '—' }}"
+                data-lokasi="{{ e.lokasi or '—' }}">
+          {{ e.judul_acara }}{% if e.tanggal_acara %} — {{ e.tanggal_acara | date }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
     </label>
 
-    <div class="grid">
+    {# Shown for an existing event: the same read-only surface the SPK form
+       uses for values that are displayed, not asked for. #}
+    <dl class="konteks" id="event-tersimpan" {% if not acara %}hidden{% endif %}>
+      <div><dt>Event</dt><dd id="ev-judul">{{ acara.judul_acara if acara else "" }}</dd></div>
+      <div><dt>Event date</dt><dd id="ev-tanggal">{{ (acara.tanggal_acara | date) if acara and acara.tanggal_acara else "—" }}</dd></div>
+      <div><dt>Location</dt><dd id="ev-lokasi">{{ (acara.lokasi or "—") if acara else "" }}</dd></div>
+    </dl>
+
+    <div id="event-baru" class="blok-event" {% if acara %}hidden{% endif %}>
+      <label>
+        Event title
+        <input name="judul_acara" value="{{ brief.judul_acara }}"
+               {% if errors.judul_acara %}aria-invalid="true"{% endif %}>
+        {% if errors.judul_acara %}<small>{{ errors.judul_acara }}</small>{% endif %}
+      </label>
+
       <label>
         Event date
         <input type="date" name="tanggal_acara" value="{{ brief.tanggal_acara }}"
                {% if errors.tanggal_acara %}aria-invalid="true"{% endif %}>
         {% if errors.tanggal_acara %}<small>{{ errors.tanggal_acara }}</small>{% endif %}
       </label>
+
       <label>
-        Quote deadline
-        <input type="date" name="deadline" value="{{ brief.deadline }}"
-               {% if errors.deadline %}aria-invalid="true"{% endif %}>
-        {% if errors.deadline %}<small>{{ errors.deadline }}</small>{% endif %}
+        Location
+        <input name="lokasi" value="{{ brief.lokasi }}">
       </label>
     </div>
+  </section>
+
+  <section>
+    <h3>This batch</h3>
 
     <label>
-      Location
-      <input name="lokasi" value="{{ brief.lokasi }}">
+      Quote deadline
+      <input type="date" name="deadline" value="{{ brief.deadline }}"
+             {% if errors.deadline %}aria-invalid="true"{% endif %}>
+      {% if errors.deadline %}<small>{{ errors.deadline }}</small>{% endif %}
     </label>
 
     <label>
@@ -64,17 +98,41 @@
   <section>
     <h3>Select vendors</h3>
 
+    {# The category this batch is for, not a filter over a wider list: it is
+       stored on the request and it is the {{ kategori }} every email in the
+       batch is written about.
+       Locked while anything is ticked, rather than asking to discard: the
+       selection was made for this category, so the category cannot move under
+       it. hx-include does not carry #terpilih — a selection made under another
+       category does not belong to this batch. #}
     <label>
-      Category
+      Category for this batch
       <select id="kategori" name="category_id"
               hx-get="/send/vendors"
+              hx-trigger="change"
               hx-target="#daftar-vendor"
-              hx-include="#kategori, #terpilih">
+              hx-include="#kategori"
+              {% if terpilih %}disabled{% endif %}
+              {% if errors.kategori %}aria-invalid="true"{% endif %}>
+        <option value="">Choose a category</option>
         {% for c in categories %}
         <option value="{{ c.id }}" {% if c.id == category_id %}selected{% endif %}>{{ c.nama }}</option>
         {% endfor %}
       </select>
+      {% if errors.kategori %}<small>{{ errors.kategori }}</small>{% endif %}
+      {# Nothing is disabled silently: this says why, and Clear selection under
+         the list is the way out. Both show and hide with the lock. #}
+      <small class="petunjuk-kunci" id="kunci-kategori"
+             {% if not terpilih %}hidden{% endif %}>
+        Clear the selection to switch category.
+      </small>
     </label>
+
+    {# A disabled select submits nothing, so a locked category would reach the
+       server blank. This carries it instead — exactly one of the two is ever
+       enabled, so the form never posts category_id twice. #}
+    <input type="hidden" id="kategori-cadangan" name="category_id"
+           value="{{ category_id or '' }}" {% if not terpilih %}disabled{% endif %}>
 
     <div id="daftar-vendor">
       {% include "_send_pick_vendor.html" %}
@@ -84,11 +142,20 @@
        the server when a validation bounce sends the user back here. #}
     <div id="terpilih" hidden>
       {% for t in terpilih %}
-      <input type="hidden" name="vendor_ids" value="{{ t.id }}" data-kategori="{{ t.kategori }}">
+      <input type="hidden" name="vendor_ids" value="{{ t.id }}">
       {% endfor %}
     </div>
 
-    <p id="counter" aria-live="polite"></p>
+    {# Counter and escape hatch on one row: the button has to be visible
+       wherever the lock is. .baris-aksi for the shared button metrics, so this
+       row does not restate them. #}
+    <div class="baris-aksi baris-terpilih">
+      <p id="counter" aria-live="polite"></p>
+      <button type="button" id="hapus-pilihan" class="secondary outline"
+              onclick="hapusPilihan()" {% if not terpilih %}hidden{% endif %}>
+        Clear selection
+      </button>
+    </div>
   </section>
 
   <div class="baris-aksi-kanan">
@@ -97,6 +164,23 @@
 </form>
 
 <script>
+  // Which half of the event step is showing. The server decides it on load and
+  // on every bounce; this only handles the change in the browser.
+  function ubahEvent() {
+    const select = document.getElementById('pilih-event');
+    const opsi = select.selectedOptions[0];
+    const dipilih = select.value !== '';
+
+    document.getElementById('event-baru').hidden = dipilih;
+    document.getElementById('event-tersimpan').hidden = !dipilih;
+
+    if (dipilih) {
+      document.getElementById('ev-judul').textContent = opsi.dataset.judul;
+      document.getElementById('ev-tanggal').textContent = opsi.dataset.tanggal;
+      document.getElementById('ev-lokasi').textContent = opsi.dataset.lokasi;
+    }
+  }
+
   function kotakTerpilih() {
     return document.getElementById('terpilih');
   }
@@ -111,9 +195,6 @@
       input.type = 'hidden';
       input.name = 'vendor_ids';
       input.value = id;
-      // Every category this vendor belongs to, so the counter can union them
-      // even after its checkbox has been swapped out of the DOM.
-      input.dataset.kategori = cb.dataset.kategori || '';
       box.appendChild(input);
     } else if (!cb.checked && ada) {
       ada.remove();
@@ -122,21 +203,41 @@
     hitungUlang();
   }
 
+  // The category owns the vendor list, so it stays put while anything is
+  // ticked. Driven by the count alone, so a manual uncheck, Clear selection
+  // and a validation bounce all land in the same state.
+  function perbaruiKunci(jumlah) {
+    const select = document.getElementById('kategori');
+    const cadangan = document.getElementById('kategori-cadangan');
+    const terkunci = jumlah > 0;
+
+    select.disabled = terkunci;
+    // Hand the value to the mirror before disabling the select takes it out
+    // of the submission, and never leave both of them enabled.
+    cadangan.value = select.value;
+    cadangan.disabled = !terkunci;
+
+    document.getElementById('kunci-kategori').hidden = !terkunci;
+    document.getElementById('hapus-pilihan').hidden = !terkunci;
+  }
+
   function hitungUlang() {
     const dipilih = kotakTerpilih().querySelectorAll('input[name="vendor_ids"]');
-    const kategori = new Set();
-
-    dipilih.forEach(function (input) {
-      (input.dataset.kategori || '')
-        .split(',')
-        .filter(Boolean)
-        .forEach(function (k) { kategori.add(k); });
-    });
-
+    // No category count any more: the batch has exactly one, and it is the
+    // field above rather than something derived from who was ticked.
     document.getElementById('counter').textContent =
-      dipilih.length + (dipilih.length === 1 ? ' vendor' : ' vendors')
-      + ' selected from ' + kategori.size
-      + (kategori.size === 1 ? ' category' : ' categories');
+      dipilih.length + (dipilih.length === 1 ? ' vendor selected' : ' vendors selected');
+    perbaruiKunci(dipilih.length);
+  }
+
+  // The way out of a locked category: empty the hidden container, untick the
+  // rows still on screen, and leave the list on the category it is showing —
+  // no htmx fetch, because the category itself has not moved.
+  function hapusPilihan() {
+    kotakTerpilih().innerHTML = '';
+    document.querySelectorAll('#daftar-vendor input[type="checkbox"]')
+      .forEach(function (cb) { cb.checked = false; });
+    hitungUlang();
   }
 
   hitungUlang();

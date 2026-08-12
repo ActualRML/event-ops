@@ -38,7 +38,16 @@
     {% for r in requests %}
     <tr>
       <td class="angka">{{ r.id }}</td>
-      <td><strong>{{ r.judul_acara }}</strong></td>
+      {# Event name, then a quiet marker only when the event was quoted more
+         than once — enough to explain two rows sharing a title, without
+         turning the list into a grouped tree. #}
+      {# Event name, then the batch's own category — which is what tells
+         several batches under one event apart at a glance. The batch counter
+         rides along only when the event was quoted more than once. #}
+      <td>
+        <strong>{{ r.judul_acara }}</strong>
+        <div class="redup">{{ r.kategori }}{% if r.event_batches > 1 %} · batch {{ r.batch_ke }} of {{ r.event_batches }}{% endif %}</div>
+      </td>
       <td>{{ r.tanggal_acara | date or "—" }}</td>
       <td class="redup">{{ r.created_at | datetime }}</td>
       {# Count and badges are one statement about one batch, so they share a

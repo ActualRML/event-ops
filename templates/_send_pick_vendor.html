@@ -7,7 +7,6 @@
 <label class="baris-vendor">
   <input type="checkbox"
          data-vendor-id="{{ v.id }}"
-         data-kategori="{{ v.kategori_ids or '' }}"
          onchange="toggleVendor(this)"
          {% if v.id in selected %}checked{% endif %}>
   <span class="vendor-isi">
@@ -15,9 +14,4 @@
     <span class="vendor-meta">{{ v.pic_nama or "no PIC" }} · {{ v.email }}</span>
   </span>
 </label>
-{% else %}
-<p class="kosong">
-  No active vendors in this category. Pick another category, or activate one
-  first on the Vendors page.
-</p>
 {% endfor %}

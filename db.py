@@ -189,17 +189,98 @@ def set_vendor_aktif(vendor_id: int, aktif: int) -> None:
         conn.commit()
 
 
-def create_request(brief: dict, subject_template: str, body_template: str,
-                   conn: sqlite3.Connection | None = None) -> int:
-    """Insert the request row. Returns the new id."""
+def create_event(judul_acara: str, tanggal_acara: str, lokasi: str,
+                 conn: sqlite3.Connection | None = None) -> int:
+    """Insert one event. Returns the new id."""
     with transaksi(conn) as c:
         cur = c.execute(
-            """INSERT INTO requests (judul_acara, tanggal_acara, lokasi, kebutuhan,
-                                     deadline, pengirim_nama, subject_template, body_template)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
+            """INSERT INTO events (judul_acara, tanggal_acara, lokasi)
+               VALUES (?, ?, ?)""",
+            (judul_acara, tanggal_acara, lokasi),
+        )
+        return cur.lastrowid
+
+
+def list_events() -> list[sqlite3.Row]:
+    """Events newest first, with how many batches each has gone out in."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT e.*, COUNT(r.id) AS batches
+                 FROM events e
+                 LEFT JOIN requests r ON r.event_id = e.id
+                GROUP BY e.id
+                ORDER BY e.id DESC"""
+        ).fetchall()
+
+
+def get_event(event_id: int) -> sqlite3.Row | None:
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM events WHERE id = ?", (event_id,)
+        ).fetchone()
+
+
+# The one place event fields are grafted back onto a request row. Everything
+# that hands a row to core/ reads through this, so judul_acara, tanggal_acara
+# and lokasi arrive under exactly the names renderer and dokumen expect —
+# only their storage moved.
+SQL_REQUEST_WITH_EVENT = """
+    SELECT r.*, e.judul_acara, e.tanggal_acara, e.lokasi, c.nama AS kategori
+      FROM requests r
+      JOIN events e ON e.id = r.event_id
+      JOIN categories c ON c.id = r.category_id
+"""
+
+# What core.renderer.render_email reads out of a brief. Named here so the
+# shape has one definition rather than one per caller.
+BRIEF_FIELDS = ("judul_acara", "tanggal_acara", "lokasi", "kategori",
+                "kebutuhan", "deadline", "pengirim_nama")
+
+
+def brief_dari_row(row) -> dict:
+    """Flatten a joined request row into the brief dict core/ expects.
+
+    The merge itself is the JOIN in SQL_REQUEST_WITH_EVENT; this is where the
+    resulting shape is pinned down. Pass it anything request_detail returns."""
+    return {nama: row[nama] for nama in BRIEF_FIELDS}
+
+
+def konteks_vendor(vendor, kategori: str) -> dict:
+    """The vendor half of what core.renderer.render_email expects.
+
+    The one place {{ kategori }} is decided. renderer reads it off the vendor
+    dict, not the brief, so this is where the batch's category replaces the
+    vendor's own list: a vendor in three categories quoted on a Tenda batch is
+    written to about Tenda, and nothing else."""
+    return {
+        "nama_pt": vendor["nama_pt"],
+        "pic_nama": vendor["pic_nama"],
+        "kategori": kategori,
+    }
+
+
+def create_request(brief: dict, subject_template: str, body_template: str,
+                   category_id: int, event_id: int | None = None,
+                   conn: sqlite3.Connection | None = None) -> int:
+    """Insert one RFQ batch. Returns the new request id.
+
+    event_id None means this brief is starting a new event, so the event row
+    is created from it first. Passing an existing event_id attaches the batch
+    to an event that already has one — a second quote round for the same day.
+    Both paths share the caller's transaction, so a half-written event can
+    never outlive a failed batch insert."""
+    with transaksi(conn) as c:
+        if event_id is None:
+            event_id = create_event(
                 brief.get("judul_acara", ""), brief.get("tanggal_acara", ""),
-                brief.get("lokasi", ""), brief.get("kebutuhan", ""),
+                brief.get("lokasi", ""), conn=c,
+            )
+        cur = c.execute(
+            """INSERT INTO requests (event_id, category_id, kebutuhan, deadline,
+                                     pengirim_nama, subject_template, body_template)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id, category_id, brief.get("kebutuhan", ""),
                 brief.get("deadline", ""), brief.get("pengirim_nama", ""),
                 subject_template, body_template,
             ),
@@ -289,26 +370,47 @@ def progress(request_id: int) -> dict:
 
 
 def list_requests() -> list[sqlite3.Row]:
-    """Requests newest first, with their outbox tallies."""
+    """Batches newest first, with their outbox tallies. judul_acara and
+    tanggal_acara come from the event, so callers read the same keys they
+    always did."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            """SELECT r.id, r.judul_acara, r.tanggal_acara, r.created_at,
+            """SELECT r.id, r.event_id, e.judul_acara, e.tanggal_acara,
+                      c.nama AS kategori, r.created_at,
+                      -- Window functions run after GROUP BY, so these count
+                      -- batches per event, not outbox rows.
+                      COUNT(*)     OVER (PARTITION BY r.event_id) AS event_batches,
+                      ROW_NUMBER() OVER (PARTITION BY r.event_id
+                                             ORDER BY r.id)       AS batch_ke,
                       COUNT(o.id) AS total,
                       COALESCE(SUM(o.status = 'sent'), 0)   AS sent,
                       COALESCE(SUM(o.status = 'failed'), 0) AS failed,
                       COALESCE(SUM(o.status = 'draft'), 0)  AS draft
                  FROM requests r
+                 JOIN events e ON e.id = r.event_id
+                 JOIN categories c ON c.id = r.category_id
                  LEFT JOIN outbox o ON o.request_id = r.id
                 GROUP BY r.id
                 ORDER BY r.id DESC"""
         ).fetchall()
 
 
-def request_detail(request_id: int) -> sqlite3.Row | None:
-    """The request row itself, templates included."""
+def list_requests_for_event(event_id: int) -> list[sqlite3.Row]:
+    """Every batch belonging to one event, oldest first — the order they
+    actually went out in."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            "SELECT * FROM requests WHERE id = ?", (request_id,)
+            SQL_REQUEST_WITH_EVENT + " WHERE r.event_id = ? ORDER BY r.id",
+            (event_id,),
+        ).fetchall()
+
+
+def request_detail(request_id: int) -> sqlite3.Row | None:
+    """One batch, templates included, with its event's fields grafted on so
+    the row can go straight to core.renderer or core.dokumen."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            SQL_REQUEST_WITH_EVENT + " WHERE r.id = ?", (request_id,)
         ).fetchone()
 
 
@@ -397,12 +499,23 @@ def create_spk(request_id: int, vendor_id: int, harga: int,
         return cur.lastrowid
 
 
+# SPK rows reach core.dokumen needing the event's title, date and location.
+# They are two joins away now, so the path is written once here rather than
+# left to each caller to remember.
+SQL_SPK_WITH_EVENT = """
+    SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi, r.pengirim_nama
+      FROM spk s
+      JOIN requests r ON r.id = s.request_id
+      JOIN events e ON e.id = r.event_id
+"""
+
+
 def get_spk(request_id: int, vendor_id: int) -> sqlite3.Row | None:
-    """The SPK for one vendor on one request, or None. The pair is unique,
-    so this is at most one row."""
+    """The SPK for one vendor on one batch, or None. The pair is unique, so
+    this is at most one row. Carries the document fields through the join."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            "SELECT * FROM spk WHERE request_id = ? AND vendor_id = ?",
+            SQL_SPK_WITH_EVENT + " WHERE s.request_id = ? AND s.vendor_id = ?",
             (request_id, vendor_id),
         ).fetchone()
 
@@ -420,10 +533,11 @@ def update_spk(spk_id: int, harga: int, lingkup_kerja: str, termin: str) -> None
 
 
 def list_spk_for_request(request_id: int) -> list[sqlite3.Row]:
-    """Every SPK issued against one request, in issue order."""
+    """Every SPK issued against one batch, in issue order."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            "SELECT * FROM spk WHERE request_id = ? ORDER BY id", (request_id,)
+            SQL_SPK_WITH_EVENT + " WHERE s.request_id = ? ORDER BY s.id",
+            (request_id,),
         ).fetchall()
 
 
@@ -432,24 +546,25 @@ def spk_by_vendor(request_id: int) -> dict:
     return {r["vendor_id"]: r for r in list_spk_for_request(request_id)}
 
 
-def get_rundown(request_id: int) -> sqlite3.Row | None:
-    """The rundown for one request, or None. At most one exists — the column
-    is UNIQUE."""
+def get_rundown(event_id: int) -> sqlite3.Row | None:
+    """The rundown for one event, or None. At most one exists — the column is
+    UNIQUE — and that is the point of hanging it off events: an event with two
+    quote rounds still has exactly one running order."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            "SELECT * FROM rundown WHERE request_id = ?", (request_id,)
+            "SELECT * FROM rundown WHERE event_id = ?", (event_id,)
         ).fetchone()
 
 
-def create_rundown(request_id: int, jam_mulai: str,
+def create_rundown(event_id: int, jam_mulai: str,
                    batas_venue: str | None) -> int:
-    """Start a rundown for one request. Returns the new id. A second one for
-    the same request raises IntegrityError — UNIQUE(request_id)."""
+    """Start a rundown for one event. Returns the new id. A second one for the
+    same event raises IntegrityError — UNIQUE(event_id)."""
     with closing(get_conn()) as conn:
         cur = conn.execute(
-            """INSERT INTO rundown (request_id, jam_mulai, batas_venue)
+            """INSERT INTO rundown (event_id, jam_mulai, batas_venue)
                VALUES (?, ?, ?)""",
-            (request_id, jam_mulai, batas_venue or None),
+            (event_id, jam_mulai, batas_venue or None),
         )
         conn.commit()
         return cur.lastrowid

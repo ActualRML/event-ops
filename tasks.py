@@ -11,11 +11,10 @@ from core import renderer
 
 
 def brief_dari_request(row) -> dict:
-    return {
-        "judul_acara": row["judul_acara"], "tanggal_acara": row["tanggal_acara"],
-        "lokasi": row["lokasi"], "kebutuhan": row["kebutuhan"],
-        "deadline": row["deadline"], "pengirim_nama": row["pengirim_nama"],
-    }
+    """Kept as the name the send path already calls. The shape itself lives in
+    db.brief_dari_row — event fields and batch fields are merged there, once,
+    so nothing here has to know that judul_acara moved tables."""
+    return db.brief_dari_row(row)
 
 
 # Keeps background tasks from being garbage collected mid-batch.
@@ -37,8 +36,8 @@ async def dispatch_batch(request_id: int) -> None:
                 permintaan["subject_template"],
                 permintaan["body_template"],
                 brief,
-                {"nama_pt": row["nama_pt"], "pic_nama": row["pic_nama"],
-                 "kategori": row["kategori"]},
+                # The batch's category, not the vendor's own list.
+                db.konteks_vendor(row, permintaan["kategori"]),
             )
             ok, hasil = await mailer.kirim_email(row["email_tujuan"], subject, body)
             if ok:

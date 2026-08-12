@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Rundown — {{ permintaan.judul_acara }}{% endblock %}
+{% block title %}Rundown — {{ acara.judul_acara }}{% endblock %}
 
 {% block content %}
 <hgroup>
-  <h2>{{ permintaan.judul_acara }}</h2>
+  <h2>{{ acara.judul_acara }}</h2>
   {# Same chip vocabulary as tracker detail: a labelled value per chip, the
      value bold. The computed end time earns a chip because it is the number
      everyone on the page is actually looking for. #}
@@ -11,16 +11,16 @@
      Only the date needs a second value as well as a second label — the times,
      the counts and the venue name read the same either way. #}
   <p class="chips">
-    <span class="chip"><span class="layar">Rundown for request</span><span class="cetak">Rundown permintaan</span>
-      <span class="chip-angka">#{{ request_id }}</span></span>
+    <span class="chip"><span class="layar">Rundown for event</span><span class="cetak">Rundown acara</span>
+      <span class="chip-angka">#{{ event_id }}</span></span>
     <span class="chip"><span class="layar">event</span><span class="cetak">acara</span>
-      <span class="chip-angka"><span class="layar">{{ permintaan.tanggal_acara | date or "no date" }}</span><span class="cetak">{{ permintaan.tanggal_acara | tanggal or "tanpa tanggal" }}</span></span></span>
+      <span class="chip-angka"><span class="layar">{{ acara.tanggal_acara | date or "no date" }}</span><span class="cetak">{{ acara.tanggal_acara | tanggal or "tanpa tanggal" }}</span></span></span>
     {# Carried for the printout, which is read away from the screen and has to
        say where to turn up. Omitted rather than shown as a dash when the brief
        never had one. #}
-    {% if permintaan.lokasi %}
+    {% if acara.lokasi %}
     <span class="chip"><span class="layar">location</span><span class="cetak">lokasi</span>
-      <span class="chip-angka">{{ permintaan.lokasi }}</span></span>
+      <span class="chip-angka">{{ acara.lokasi }}</span></span>
     {% endif %}
     {% if rundown %}
     <span class="chip"><span class="layar">starts</span><span class="cetak">mulai</span>
@@ -58,7 +58,7 @@
   {# Heading carries the state, the button stays "Save" — the same split the
      vendor form uses for Add Vendor and Edit. #}
   <h3>{% if rundown %}Schedule{% else %}Start the rundown{% endif %}</h3>
-  <form method="post" action="/tracker/{{ request_id }}/rundown"
+  <form method="post" action="/events/{{ event_id }}/rundown"
         class="form-rapat form-vendor">
     <div class="grid-isian">
       <label>
@@ -142,12 +142,12 @@
           {# Disabled rather than hidden at the ends, so the pair keeps its
              width and the column does not ripple row to row. #}
           <div class="aksi-grup">
-            <form method="post" action="/tracker/{{ request_id }}/rundown/items/{{ b.item.id }}/move">
+            <form method="post" action="/events/{{ event_id }}/rundown/items/{{ b.item.id }}/move">
               <input type="hidden" name="direction" value="up">
               <button type="submit" class="secondary outline btn-mini"
                       {% if loop.first %}disabled{% endif %}>Up</button>
             </form>
-            <form method="post" action="/tracker/{{ request_id }}/rundown/items/{{ b.item.id }}/move">
+            <form method="post" action="/events/{{ event_id }}/rundown/items/{{ b.item.id }}/move">
               <input type="hidden" name="direction" value="down">
               <button type="submit" class="secondary outline btn-mini"
                       {% if loop.last %}disabled{% endif %}>Down</button>
@@ -158,7 +158,7 @@
           <div class="aksi-grup">
             {# Edit reopens the form below with this row loaded — same fields,
                so a second page would only duplicate them. #}
-            <a href="/tracker/{{ request_id }}/rundown?item={{ b.item.id }}"
+            <a href="/events/{{ event_id }}/rundown?item={{ b.item.id }}"
                role="button" class="secondary outline btn-mini">Edit</a>
             {# The one irreversible action in the app, so the one that asks.
                Plain inline handler on a plain form — the same mechanism as
@@ -169,7 +169,7 @@
                form submitting with no confirmation at all. tojson emits a
                whole JS string literal, escaping any apostrophe to a unicode
                escape, which is why the attribute itself is single-quoted. #}
-            <form method="post" action="/tracker/{{ request_id }}/rundown/items/{{ b.item.id }}/delete"
+            <form method="post" action="/events/{{ event_id }}/rundown/items/{{ b.item.id }}/delete"
                   onsubmit='return confirm({{ ("Remove “" ~ b.item.kegiatan ~ "” from the rundown? This cannot be undone.") | tojson }})'>
               <button type="submit" class="outline btn-mini btn-mati">Remove</button>
             </form>
@@ -207,7 +207,7 @@
 <section>
   <h3>{% if item_id %}Edit item{% else %}Add item{% endif %}</h3>
   <form method="post"
-        action="/tracker/{{ request_id }}/rundown/items{% if item_id %}/{{ item_id }}{% endif %}"
+        action="/events/{{ event_id }}/rundown/items{% if item_id %}/{{ item_id }}{% endif %}"
         class="form-rapat form-vendor">
     <div class="grid-isian">
       <label>
@@ -242,7 +242,7 @@
     <div class="baris-aksi">
       <button type="submit">Save</button>
       {% if item_id %}
-      <a href="/tracker/{{ request_id }}/rundown" role="button"
+      <a href="/events/{{ event_id }}/rundown" role="button"
          class="secondary outline">Cancel</a>
       {% endif %}
     </div>
@@ -251,7 +251,9 @@
 {% endif %}
 
 <div class="baris-aksi-kanan">
-  <a href="/tracker/{{ request_id }}" role="button" class="secondary outline">Back to request</a>
+  {# The rundown belongs to the event, which may have been quoted in several
+     batches, so there is no single batch to go "back" to. #}
+  <a href="/tracker" role="button" class="secondary outline">All requests</a>
   {# Same page, printed — no print route, so there is no second copy to drift.
      Inline handler, as with lockSend and the Remove confirmation. #}
   <button type="button" class="secondary outline"

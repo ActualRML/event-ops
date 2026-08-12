@@ -4,12 +4,19 @@
 -- hardcoded, so a database rebuilt next year still reads as a system in use:
 -- two events already past, one a fortnight out, one still being quoted.
 --
+-- One send is one category, so event 1 goes out in three batches — Tenda,
+-- Lighting, Catering — each with its own kebutuhan and deadline, and all three
+-- sharing one rundown. That makes the events/requests/category split visible
+-- in the data rather than only in the schema.
+--
 -- Deliverable addresses use plus-addressing on one real inbox so a full batch
 -- send can be verified end-to-end. Vendors 15 and 19 carry a data-entry typo
 -- on purpose: the @ is missing. Gmail refuses those synchronously (SMTP 553),
--- which is what exercises the failure path and gives request 1 its mixed
--- batch. Reserved example.* domains would not work here — Gmail accepts them
--- and bounces later, so they would land in the outbox as status='sent'.
+-- which is what exercises the failure path — vendor 15 lands in the Lighting
+-- batch and 19 in the Catering one, so two of event 1's three rounds show a
+-- mixed result. Reserved example.* domains
+-- would not work here: Gmail accepts them and bounces later, so they would
+-- land in the outbox as status='sent'.
 
 INSERT INTO categories (id, nama) VALUES
     (1, 'Tenda'),
@@ -74,18 +81,38 @@ INSERT INTO vendor_categories (vendor_id, category_id) VALUES
     (24, 6),
     (25, 1), (25, 2);
 
--- Request 1 carries the full templates; the rest read them back out rather
--- than repeating thirty lines of email three more times. Every request stores
--- its own copy, which is what the app does on a real send.
+-- Four events. Two already run, one a fortnight out, one still being quoted.
+INSERT INTO events (id, judul_acara, tanggal_acara, lokasi, created_at) VALUES
+    (1, 'Gathering Tahunan Karyawan PT Cipta Karya Sentosa',
+        date('now', 'localtime', '-42 days'),
+        'Lapangan Parkir Utama, Sentul International Convention Center, Bogor',
+        date('now', 'localtime', '-62 days') || ' 08:55:03'),
+    (2, 'Resepsi Pernikahan Anindya dan Bagas',
+        date('now', 'localtime', '-21 days'),
+        'Balai Kartini, Jalan Gatot Subroto Kav. 37, Jakarta Selatan',
+        date('now', 'localtime', '-40 days') || ' 13:47:26'),
+    (3, 'Peluncuran Produk Nusantara Fresh Series',
+        date('now', 'localtime', '+14 days'),
+        'Ballroom Hotel Grand Mercure, Jalan Hayam Wuruk, Jakarta Pusat',
+        date('now', 'localtime', '-13 days') || ' 10:02:41'),
+    (4, 'Seminar Nasional Transformasi Digital UMKM',
+        date('now', 'localtime', '+42 days'),
+        'Auditorium Gedung Serbaguna, Universitas Padjadjaran, Bandung',
+        date('now', 'localtime', '-4 days') || ' 15:11:08');
+
+-- One send is one category, so a big event is quoted in one batch per trade.
+-- Event 1 runs three: Tenda, Lighting and Catering, each with its own
+-- kebutuhan and its own deadline, and all three still share one rundown.
+--
+-- Batch 1 carries the full templates; the rest read them back out rather than
+-- repeating thirty lines of email five more times. Every batch stores its own
+-- copy, which is what the app does on a real send.
 INSERT INTO requests
-    (id, judul_acara, tanggal_acara, lokasi, kebutuhan, deadline, pengirim_nama,
+    (id, event_id, category_id, kebutuhan, deadline, pengirim_nama,
      created_at, subject_template, body_template)
 VALUES (
-    1,
-    'Gathering Tahunan Karyawan PT Cipta Karya Sentosa',
-    date('now', 'localtime', '-42 days'),
-    'Lapangan Parkir Utama, Sentul International Convention Center, Bogor',
-    'Kapasitas 800 tamu, acara outdoor mulai pukul 16.00 sampai 22.00 WIB. Loading in H-1 mulai pukul 08.00.',
+    1, 1, 1,
+    'Tenda roder untuk area utama, kapasitas 800 tamu, outdoor. Loading in H-1 mulai pukul 08.00.',
     date('now', 'localtime', '-56 days'),
     'Ronald Lilipaly',
     date('now', 'localtime', '-60 days') || ' 09:12:44',
@@ -125,14 +152,35 @@ Hormat kami,
 Divisi Procurement
 ');
 
+-- Event 1, round two: lighting.
 INSERT INTO requests
-    (id, judul_acara, tanggal_acara, lokasi, kebutuhan, deadline, pengirim_nama,
-     created_at, subject_template, body_template)
-SELECT 2,
-       'Resepsi Pernikahan Anindya dan Bagas',
-       date('now', 'localtime', '-21 days'),
-       'Balai Kartini, Jalan Gatot Subroto Kav. 37, Jakarta Selatan',
-       'Resepsi indoor 600 tamu, akad pukul 09.00 dan resepsi pukul 19.00 WIB. Dekorasi rustic, panggung utama 8x4 m.',
+    (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
+     subject_template, body_template)
+SELECT 2, 1, 4,
+       'Lighting panggung utama dan area tamu, acara malam hari sampai pukul 22.00 WIB.',
+       date('now', 'localtime', '-52 days'),
+       'Ronald Lilipaly',
+       date('now', 'localtime', '-55 days') || ' 10:26:33',
+       subject_template, body_template
+FROM requests WHERE id = 1;
+
+-- Event 1, round three: catering, once the headcount was final.
+INSERT INTO requests
+    (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
+     subject_template, body_template)
+SELECT 3, 1, 5,
+       'Konsumsi prasmanan 800 pax, tiga menu utama dan dua gubugan, termasuk pramusaji.',
+       date('now', 'localtime', '-48 days'),
+       'Ronald Lilipaly',
+       date('now', 'localtime', '-51 days') || ' 09:40:12',
+       subject_template, body_template
+FROM requests WHERE id = 1;
+
+INSERT INTO requests
+    (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
+     subject_template, body_template)
+SELECT 4, 2, 2,
+       'Sound system indoor untuk 600 tamu, akad pukul 09.00 dan resepsi pukul 19.00 WIB.',
        date('now', 'localtime', '-35 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-38 days') || ' 14:05:19',
@@ -140,109 +188,144 @@ SELECT 2,
 FROM requests WHERE id = 1;
 
 INSERT INTO requests
-    (id, judul_acara, tanggal_acara, lokasi, kebutuhan, deadline, pengirim_nama,
-     created_at, subject_template, body_template)
-SELECT 3,
-       'Peluncuran Produk Nusantara Fresh Series',
-       date('now', 'localtime', '+14 days'),
-       'Ballroom Hotel Grand Mercure, Jalan Hayam Wuruk, Jakarta Pusat',
-       'Peluncuran produk untuk 250 tamu undangan dan media, indoor. Butuh panggung 6x4 m, LED screen, dan area demo produk.',
+    (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
+     subject_template, body_template)
+SELECT 5, 3, 3,
+       'Pendingin ruangan tambahan untuk ballroom, 250 tamu undangan dan media.',
        date('now', 'localtime', '-2 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-12 days') || ' 11:38:07',
        subject_template, body_template
 FROM requests WHERE id = 1;
 
--- Still being quoted: no outbox rows at all, so the tracker shows a request
--- that has not been dispatched next to three that have.
+-- Still being quoted: no outbox rows at all, so the tracker shows a batch that
+-- has not been dispatched next to five that have.
 INSERT INTO requests
-    (id, judul_acara, tanggal_acara, lokasi, kebutuhan, deadline, pengirim_nama,
-     created_at, subject_template, body_template)
-SELECT 4,
-       'Seminar Nasional Transformasi Digital UMKM',
-       date('now', 'localtime', '+42 days'),
-       'Auditorium Gedung Serbaguna, Universitas Padjadjaran, Bandung',
-       'Seminar sehari untuk 400 peserta, ruang ber-AC. Butuh sound system, lighting panggung, dan konsumsi untuk dua sesi.',
+    (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
+     subject_template, body_template)
+SELECT 6, 4, 6,
+       'Genset silent untuk cadangan daya seminar 400 peserta, sehari penuh.',
        date('now', 'localtime', '+21 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-3 days') || ' 16:22:51',
        subject_template, body_template
 FROM requests WHERE id = 1;
 
--- Subjects are built from the same pieces renderer.render_email uses, off
--- v_vendor_lengkap, so the stored subject matches what a real send produces
--- for a multi-category vendor instead of being retyped by hand.
--- Request 1: eight vendors, the two typo addresses refused by the server.
-INSERT INTO outbox
-    (request_id, vendor_id, email_tujuan, subject, status, error_msg, message_id,
-     sent_at, created_at)
-SELECT 1,
-       v.id,
-       v.email,
-       'Permintaan Penawaran ' || v.kategori || ' - ' || v.nama_pt || ' (' || r.judul_acara || ')',
-       CASE WHEN v.id IN (15, 19) THEN 'failed' ELSE 'sent' END,
-       CASE WHEN v.id IN (15, 19)
-            THEN 'SMTPRecipientsRefused: (553, ''5.1.3 The recipient address <'
-                 || v.email || '> is not a valid RFC-5321 address'')' END,
-       CASE WHEN v.id NOT IN (15, 19)
-            THEN '<CAF' || printf('%015d', v.id * 1000003 + 1) || '@mail.gmail.com>' END,
-       CASE WHEN v.id NOT IN (15, 19)
-            THEN date('now', 'localtime', '-58 days')
-                 || ' 10:' || printf('%02d', 12 + v.id) || ':' || printf('%02d', (v.id * 7) % 60) END,
-       date('now', 'localtime', '-58 days') || ' 10:11:03'
-FROM v_vendor_lengkap v
-JOIN requests r ON r.id = 1
-WHERE v.id IN (1, 5, 9, 13, 15, 17, 19, 21);
-
--- Request 2: six vendors, clean batch.
+-- Subjects name the batch's category, not the vendor's own list — a vendor in
+-- three categories quoted on the Lighting batch is written to about Lighting
+-- and nothing else. Built off the batch's category here for exactly the reason
+-- db.konteks_vendor does it at runtime.
+-- Batch 1 (event 1, Tenda): six vendors, clean batch.
 INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, message_id,
      sent_at, created_at)
-SELECT 2,
-       v.id,
-       v.email,
-       'Permintaan Penawaran ' || v.kategori || ' - ' || v.nama_pt || ' (' || r.judul_acara || ')',
+SELECT 1, v.id, v.email,
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
        'sent',
-       '<CAF' || printf('%015d', v.id * 1000003 + 2) || '@mail.gmail.com>',
+       '<CAF' || printf('%015d', v.id * 1000003 + 1) || '@mail.gmail.com>',
+       date('now', 'localtime', '-58 days')
+         || ' 10:' || printf('%02d', 12 + v.id) || ':' || printf('%02d', (v.id * 7) % 60),
+       date('now', 'localtime', '-58 days') || ' 10:11:03'
+FROM v_vendor_lengkap v
+JOIN requests r ON r.id = 1
+JOIN events e ON e.id = r.event_id
+JOIN categories c ON c.id = r.category_id
+WHERE v.id IN (1, 2, 3, 4, 20, 25);
+
+-- Batch 2 (event 1, Lighting): five vendors including the three-category one,
+-- plus the typo address that the server refuses.
+INSERT INTO outbox
+    (request_id, vendor_id, email_tujuan, subject, status, error_msg, message_id,
+     sent_at, created_at)
+SELECT 2, v.id, v.email,
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       CASE WHEN v.id = 15 THEN 'failed' ELSE 'sent' END,
+       CASE WHEN v.id = 15
+            THEN 'SMTPRecipientsRefused: (553, ''5.1.3 The recipient address <'
+                 || v.email || '> is not a valid RFC-5321 address'')' END,
+       CASE WHEN v.id <> 15
+            THEN '<CAF' || printf('%015d', v.id * 1000003 + 2) || '@mail.gmail.com>' END,
+       CASE WHEN v.id <> 15
+            THEN date('now', 'localtime', '-54 days')
+                 || ' 09:' || printf('%02d', 18 + v.id) || ':' || printf('%02d', (v.id * 7) % 60) END,
+       date('now', 'localtime', '-54 days') || ' 09:17:52'
+FROM v_vendor_lengkap v
+JOIN requests r ON r.id = 2
+JOIN events e ON e.id = r.event_id
+JOIN categories c ON c.id = r.category_id
+WHERE v.id IN (8, 13, 14, 15, 16);
+
+-- Batch 3 (event 1, Catering): three vendors, the other typo address.
+INSERT INTO outbox
+    (request_id, vendor_id, email_tujuan, subject, status, error_msg, message_id,
+     sent_at, created_at)
+SELECT 3, v.id, v.email,
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       CASE WHEN v.id = 19 THEN 'failed' ELSE 'sent' END,
+       CASE WHEN v.id = 19
+            THEN 'SMTPRecipientsRefused: (553, ''5.1.3 The recipient address <'
+                 || v.email || '> is not a valid RFC-5321 address'')' END,
+       CASE WHEN v.id <> 19
+            THEN '<CAF' || printf('%015d', v.id * 1000003 + 3) || '@mail.gmail.com>' END,
+       CASE WHEN v.id <> 19
+            THEN date('now', 'localtime', '-50 days')
+                 || ' 11:' || printf('%02d', 4 + v.id) || ':' || printf('%02d', (v.id * 11) % 60) END,
+       date('now', 'localtime', '-50 days') || ' 11:03:28'
+FROM v_vendor_lengkap v
+JOIN requests r ON r.id = 3
+JOIN events e ON e.id = r.event_id
+JOIN categories c ON c.id = r.category_id
+WHERE v.id IN (17, 18, 19);
+
+-- Batch 4 (event 2, Sound System): three vendors, clean batch.
+INSERT INTO outbox
+    (request_id, vendor_id, email_tujuan, subject, status, message_id,
+     sent_at, created_at)
+SELECT 4, v.id, v.email,
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       'sent',
+       '<CAF' || printf('%015d', v.id * 1000003 + 4) || '@mail.gmail.com>',
        date('now', 'localtime', '-37 days')
          || ' 09:' || printf('%02d', 24 + v.id) || ':' || printf('%02d', (v.id * 11) % 60),
        date('now', 'localtime', '-37 days') || ' 09:23:41'
 FROM v_vendor_lengkap v
-JOIN requests r ON r.id = 2
-WHERE v.id IN (4, 6, 10, 14, 18, 22);
+JOIN requests r ON r.id = 4
+JOIN events e ON e.id = r.event_id
+JOIN categories c ON c.id = r.category_id
+WHERE v.id IN (5, 6, 7);
 
--- Request 3: the event a fortnight out, dispatched cleanly, quotes coming in.
+-- Batch 5 (event 3, AC): the event a fortnight out, dispatched cleanly.
 INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, message_id,
      sent_at, created_at)
-SELECT 3,
-       v.id,
-       v.email,
-       'Permintaan Penawaran ' || v.kategori || ' - ' || v.nama_pt || ' (' || r.judul_acara || ')',
+SELECT 5, v.id, v.email,
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
        'sent',
-       '<CAF' || printf('%015d', v.id * 1000003 + 3) || '@mail.gmail.com>',
+       '<CAF' || printf('%015d', v.id * 1000003 + 5) || '@mail.gmail.com>',
        date('now', 'localtime', '-11 days')
          || ' 15:' || printf('%02d', 6 + v.id) || ':' || printf('%02d', (v.id * 13) % 60),
        date('now', 'localtime', '-11 days') || ' 15:05:12'
 FROM v_vendor_lengkap v
-JOIN requests r ON r.id = 3
-WHERE v.id IN (5, 12, 16, 20, 24, 25);
+JOIN requests r ON r.id = 5
+JOIN events e ON e.id = r.event_id
+JOIN categories c ON c.id = r.category_id
+WHERE v.id IN (9, 10, 12);
 
--- Three work orders across the two events already run. The sequence restarts
--- per year, the way db.py allocates it, so a rebuild near New Year still
--- produces numbers the app would go on to extend correctly.
+-- Three work orders, each from a different batch and so a different category:
+-- tenda and catering out of event 1's first and third rounds, sound system out
+-- of event 2. The sequence restarts per year, the way db.next_nomor does it.
 WITH terbit(request_id, vendor_id, harga, lingkup_kerja, termin, tgl) AS (
     VALUES
         (1, 1, 42500000,
          'Sewa 12 unit tenda roder ukuran 10x20 m termasuk plafon, karpet, pemasangan dan pembongkaran di lokasi.',
          '50% DP setelah SPK terbit, 50% H+7 setelah acara selesai.',
          date('now', 'localtime', '-50 days')),
-        (1, 17, 58000000,
+        (3, 17, 58000000,
          'Katering prasmanan untuk 800 pax, tiga menu utama dan dua gubugan, termasuk peralatan saji dan pramusaji.',
          '30% DP, 70% H+14 setelah acara selesai.',
-         date('now', 'localtime', '-49 days')),
-        (2, 14, 9750000,
-         'Paket lighting resepsi: 24 par LED, 4 moving head, 1 follow spot, termasuk operator selama acara berlangsung.',
+         date('now', 'localtime', '-44 days')),
+        (4, 6, 21500000,
+         'Paket sound system indoor 600 pax: line array, mixer digital, 4 monitor panggung, termasuk operator.',
          '50% DP, 50% H+7 setelah acara selesai.',
          date('now', 'localtime', '-30 days'))
 )
@@ -262,10 +345,11 @@ SELECT request_id,
        harga, lingkup_kerja, termin, tgl, tgl || ' 11:20:35'
 FROM terbit;
 
--- Two rundowns. Request 1 finished inside its venue limit; request 3 runs
+-- Two rundowns, hung off events. Event 1 has three batches and still exactly
+-- one running order. Event 1 finished inside its venue limit; event 3 runs
 -- forty minutes past, so the over-limit warning is visible on first load
 -- without anyone editing a duration.
-INSERT INTO rundown (id, request_id, jam_mulai, batas_venue, created_at) VALUES
+INSERT INTO rundown (id, event_id, jam_mulai, batas_venue, created_at) VALUES
     (1, 1, '16:00', '22:00', date('now', 'localtime', '-59 days') || ' 15:40:22'),
     (2, 3, '09:00', '15:00', date('now', 'localtime', '-11 days') || ' 10:05:47');
 
