@@ -21,8 +21,13 @@
 <div class="baris-aksi-kanan">
   <a href="/tracker" role="button" class="secondary outline">All requests</a>
   {# By event, not by batch: a second quote round for the same day reaches the
-     same running order. #}
-  <a href="/events/{{ permintaan.event_id }}/rundown" role="button" class="secondary outline">Rundown</a>
+     same running order.
+     The label carries the state, because the destination is the only place
+     that shows it: one link for an event that has a running order and one for
+     an event that does not, so "there isn't one yet" is visible from here
+     rather than only after clicking. #}
+  <a href="/events/{{ permintaan.event_id }}/rundown" role="button" class="secondary outline">
+    {% if rundown %}Rundown{% else %}Start rundown{% endif %}</a>
   <form method="post" action="/tracker/{{ request_id }}/retry">
     <button type="submit" {% if not p.failed and not p.draft %}disabled{% endif %}>
       Retry failed

@@ -30,6 +30,10 @@ async def tracker_detail(request: Request, request_id: int):
             "p": db.progress(request_id),
             "rows": db.list_outbox_rows(request_id),
             "spk": db.spk_by_vendor(request_id),
+            # Only so the Rundown button can say whether it opens one or
+            # starts one. The rundown page itself is reached by event id and
+            # loads its own row.
+            "rundown": db.get_rundown(permintaan["event_id"]),
         },
     )
 
