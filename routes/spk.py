@@ -1,6 +1,5 @@
 """SPK: issue, edit, and download the work order for one vendor of one request."""
 
-import re
 import sqlite3
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -8,43 +7,11 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 
 import db
 from core import dokumen
-from core import terbilang
-from deps import templates
+from deps import parse_harga, templates
 
 router = APIRouter()
 
 MEDIA_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
-# Grouped digits: 15.000.000 or 15,000,000, but not 15.5 — a stray decimal
-# must be rejected, not silently multiplied by ten.
-HARGA_BERKELOMPOK = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
-
-
-def parse_harga(raw: str) -> tuple[int | None, str | None]:
-    """Read what procurement actually types. "15000000", "15.000.000" and
-    "Rp 15.000.000" all mean the same amount; the separators are stripped and
-    the value is stored as whole rupiah."""
-    teks = str(raw).strip()
-    if not teks:
-        return None, "Amount is required."
-
-    # Currency prefix and any spacing inside the digits.
-    teks = re.sub(r"^rp\.?\s*", "", teks, flags=re.IGNORECASE)
-    teks = re.sub(r"[\s ]", "", teks)
-
-    if HARGA_BERKELOMPOK.match(teks):
-        teks = teks.replace(".", "").replace(",", "")
-    elif not teks.isdigit():
-        return None, "Enter a whole rupiah amount, e.g. 15.000.000."
-
-    nilai = int(teks)
-    if nilai <= 0:
-        return None, "Amount must be greater than zero."
-    # The document spells the amount out, and terbilang stops here.
-    if nilai > terbilang.MAKS:
-        maks = dokumen.format_rupiah(terbilang.MAKS, prefix=False)
-        return None, f"Amount is above the maximum of {maks}."
-    return nilai, None
 
 
 def muat_spk(request_id: int, vendor_id: int):
