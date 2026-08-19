@@ -326,6 +326,22 @@
                         overflow-wrap: anywhere; }
     /* Over budget. The app's failure red, and the only colour on the strip. */
     .nilai-minus { color: #b3261e; }
+
+    /* Quantity stepper, sponsor package rows only. Right-aligned like the
+       number it replaces, so the column still reads as numeric. 24px controls
+       rather than the 32px of .btn-mini: three of them share one cell, and the
+       pair of buttons has to leave the typed box room to hold four digits. */
+    .kendali-qty { display: flex; align-items: center; justify-content: flex-end;
+                   gap: 4px; margin: 0; }
+    .btn-qty { width: 24px; height: 24px; flex: 0 0 auto;
+               padding: 0; font-size: 14px; line-height: 1;
+               display: inline-flex; align-items: center; justify-content: center; }
+    /* Beats .form-rapat's 34px, which this input would otherwise inherit on
+       any page carrying that class, and Pico's full-width default. */
+    .kotak-qty { width: 46px; flex: 0 0 auto; height: 24px;
+                 padding: 2px 4px; margin: 0;
+                 font-size: 13px; line-height: 1.4; text-align: center;
+                 font-variant-numeric: tabular-nums; }
     @media (max-width: 900px) {
       .ringkas-paket { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }

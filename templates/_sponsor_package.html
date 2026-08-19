@@ -1,0 +1,108 @@
+{# The package table, and the swap target for every quantity change.
+
+   Same template on a full page load and on a swap, so the two can never
+   drift. The summary rides along out of band, but only on a swap — the full
+   page already renders it above. Exactly the shape _vendor_table.html uses. #}
+{% if oob %}{% include "_sponsor_summary.html" %}{% endif %}
+
+<table class="tabel tabel-paket" id="tabel-paket">
+  <colgroup>
+    {# Qty went from 8% to 12% when the cell gained its stepper: two 24px
+       buttons, a 46px box and the gaps measure ~124px with cell padding, and
+       12% of the panel is ~138px. The 4% comes off the two unit-price
+       columns, which are the narrowest text in the row. #}
+    <col style="width: 26%">
+    <col style="width: 12%">
+    <col style="width: 13%">
+    <col style="width: 13%">
+    <col style="width: 13%">
+    <col style="width: 13%">
+    <col style="width: 10%">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th class="angka">Qty</th>
+      <th class="angka">Cost</th>
+      <th class="angka">Value</th>
+      <th class="angka">Line cost</th>
+      <th class="angka">Line value</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in baris %}
+    <tr>
+      <td>
+        <strong>{{ b.nama }}</strong>
+        {% if b.satuan %}<div class="redup">per {{ b.satuan }}</div>{% endif %}
+      </td>
+      <td>
+        {# The form's action is the absolute endpoint, so Enter in the box
+           still works with no JS. The two buttons carry their own hx-post to
+           the delta endpoint and are type="button", so they never submit this
+           form. change bubbles from the input, which is why the form can
+           listen for it without naming the input. #}
+        <form class="kendali-qty" method="post"
+              action="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty-exact"
+              hx-post="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty-exact"
+              hx-target="#tabel-paket" hx-swap="outerHTML"
+              hx-trigger="submit, change">
+          {# Disabled at 1. Decrementing off the bottom is a no-op in SQL as
+             well — this button must never be the thing that removes a line. #}
+          <button type="button" class="secondary outline btn-qty"
+                  hx-post="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty"
+                  hx-vals='{"delta": "-1"}'
+                  hx-target="#tabel-paket" hx-swap="outerHTML"
+                  aria-label="One fewer {{ b.nama }}"
+                  {% if b.qty <= 1 %}disabled{% endif %}>&minus;</button>
+          {# Typed, not only stepped: things sold in tens are not reached by
+             clicking. Not type="number" — the spinner duplicates the buttons
+             either side of it. #}
+          <input type="text" name="qty" value="{{ b.qty }}" class="kotak-qty"
+                 inputmode="numeric" autocomplete="off"
+                 aria-label="Quantity of {{ b.nama }}">
+          <button type="button" class="secondary outline btn-qty"
+                  hx-post="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty"
+                  hx-vals='{"delta": "1"}'
+                  hx-target="#tabel-paket" hx-swap="outerHTML"
+                  aria-label="One more {{ b.nama }}">+</button>
+        </form>
+      </td>
+      {# The snapshot, not today's catalog price. Editing the item in /items
+         leaves these two columns exactly as they are, and so does moving the
+         quantity beside them. #}
+      <td class="angka redup">{{ b.cost | rupiah }}</td>
+      <td class="angka redup">{{ b.value | rupiah }}</td>
+      <td class="angka">{{ (b.qty * b.cost) | rupiah }}</td>
+      <td class="angka">{{ (b.qty * b.value) | rupiah }}</td>
+      <td class="aksi">
+        <div class="aksi-grup">
+          <form method="post" action="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/hapus">
+            <button type="submit" class="outline btn-mini btn-mati">Remove</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="7" class="kosong">
+        Nothing in this package yet. Add the first line below — the catalog
+        price is copied in as it stands today and stays put afterwards.
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  {% if baris %}
+  {# Totals in the table's own foot, so they line up under the columns they
+     add up. Recomputed server-side on every change; no script sums anything. #}
+  <tfoot>
+    <tr>
+      <td colspan="4">Total</td>
+      <td class="angka">{{ r.cost_pakai | rupiah }}</td>
+      <td class="angka">{{ r.value_total | rupiah }}</td>
+      <td></td>
+    </tr>
+  </tfoot>
+  {% endif %}
+</table>

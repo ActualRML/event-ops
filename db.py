@@ -935,15 +935,19 @@ def items_available_for_sponsor(sponsor_id: int) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def add_sponsor_item(sponsor_id: int, item_id: int, qty: int) -> int | None:
+def add_sponsor_item(sponsor_id: int, item_id: int, qty: int = 1) -> int | None:
     """Add one line, snapshotting the catalog price into it.
 
-    Returns the new line id, or None when the item does not exist. The read of
+    Returns the line id, or None when the item does not exist. The read of
     items and the insert share one transaction, so the price written is the one
     that was on the catalog at this instant and cannot be half-updated by a
     concurrent edit. After this the line never consults items for money again.
 
-    A second line for the same (sponsor_id, item_id) raises IntegrityError."""
+    Adding an item the sponsor already has increments the line that is there
+    rather than raising: UNIQUE(sponsor_id, item_id) makes it a conflict, and
+    DO UPDATE adds to qty. cost and value are deliberately absent from the SET
+    list — an existing line keeps the snapshot it was created with, however the
+    catalog has been repriced since. Invariant 15."""
     with closing(get_conn()) as conn:
         conn.execute("BEGIN IMMEDIATE")
         item = conn.execute(
@@ -952,13 +956,68 @@ def add_sponsor_item(sponsor_id: int, item_id: int, qty: int) -> int | None:
         if item is None:
             conn.commit()
             return None
-        cur = conn.execute(
+        conn.execute(
             """INSERT INTO sponsor_item (sponsor_id, item_id, qty, cost, value)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(sponsor_id, item_id)
+               DO UPDATE SET qty = qty + excluded.qty""",
             (sponsor_id, item_id, qty, item["cost"], item["value"]),
         )
+        # Read back rather than lastrowid: after DO UPDATE that is the rowid of
+        # the conflicting insert attempt, not of the row that actually moved.
+        baris = conn.execute(
+            "SELECT id FROM sponsor_item WHERE sponsor_id = ? AND item_id = ?",
+            (sponsor_id, item_id),
+        ).fetchone()
         conn.commit()
-        return cur.lastrowid
+        return baris["id"]
+
+
+def get_sponsor_item(line_id: int) -> sqlite3.Row | None:
+    """One package line by id, or None. Carries sponsor_id, so a route can
+    check the line actually belongs to the sponsor in its own URL."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM sponsor_item WHERE id = ?", (line_id,)
+        ).fetchone()
+
+
+def bump_sponsor_item_qty(line_id: int, delta: int) -> bool:
+    """Move one line's qty by delta. Returns True when it moved.
+
+    `qty = qty + ?` in SQL, not a read-then-write: two fast clicks on + are two
+    increments, and neither can lose the other. The `qty + ? >= 1` guard is what
+    turns a decrement past the floor into a no-op rather than a
+    CHECK(qty > 0) failure — this never deletes a line, remove_sponsor_item is
+    the only thing that does.
+
+    cost and value are not in the SET list: adjusting a quantity must not
+    re-read the catalog. Invariant 15."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            """UPDATE sponsor_item SET qty = qty + :d
+                WHERE id = :id AND qty + :d >= 1""",
+            {"d": delta, "id": line_id},
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def set_sponsor_item_qty(line_id: int, qty: int) -> bool:
+    """Set one line's qty outright — what the typed box sends. Returns True
+    when a row was written.
+
+    The caller clamps; anything below 1 is refused here as well, so a
+    hand-posted zero cannot reach CHECK(qty > 0). cost and value untouched,
+    for the same reason as bump."""
+    if qty < 1:
+        return False
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            "UPDATE sponsor_item SET qty = ? WHERE id = ?", (qty, line_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def remove_sponsor_item(line_id: int) -> bool:

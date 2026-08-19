@@ -12,44 +12,7 @@
   </p>
 </hgroup>
 
-{# Always visible, above everything else on the page: these five are the reason
-   staff open this screen. Rebuilt from the database on every add and remove. #}
-<dl class="ringkas-paket">
-  <div>
-    <dt>Budget</dt>
-    <dd>{{ r.budget | rupiah }}</dd>
-  </div>
-  <div>
-    <dt>Cost used</dt>
-    <dd>{{ r.cost_pakai | rupiah }}</dd>
-  </div>
-  <div>
-    <dt>Remaining</dt>
-    {# Sign outside the currency symbol: "Rp -750.000" reads as a broken amount
-       rather than a negative one. #}
-    <dd class="{{ 'nilai-minus' if r.sisa < 0 }}">{% if r.sisa < 0 %}−{{ (-r.sisa) | rupiah }}{% else %}{{ r.sisa | rupiah }}{% endif %}</dd>
-  </div>
-  <div>
-    <dt>Total value</dt>
-    <dd>{{ r.value_total | rupiah }}</dd>
-  </div>
-  <div>
-    <dt>Value</dt>
-    <dd>{{ "%.2f"|format(r.multiple) }}x</dd>
-  </div>
-</dl>
-
-{# A warning, not a blocker — the same shape the rundown uses when it runs past
-   the venue limit. Staff may knowingly overspend, so nothing here is disabled. #}
-{% if r.sisa < 0 %}
-<article class="peringatan">
-  <strong>This package is over budget.</strong>
-  It uses {{ r.cost_pakai | rupiah }} against a budget of {{ r.budget | rupiah }},
-  {{ (-r.sisa) | rupiah }} more than the {{ sponsor.persen_budget }}% share of
-  this contribution. Remove a line, or raise the share if the overspend is
-  agreed.
-</article>
-{% endif %}
+{% include "_sponsor_summary.html" %}
 
 {% if errors %}
 <article>
@@ -59,71 +22,7 @@
 
 <section>
   <h3>Package</h3>
-  <table class="tabel tabel-paket">
-    <colgroup>
-      <col style="width: 26%">
-      <col style="width: 8%">
-      <col style="width: 14%">
-      <col style="width: 14%">
-      <col style="width: 14%">
-      <col style="width: 14%">
-      <col style="width: 10%">
-    </colgroup>
-    <thead>
-      <tr>
-        <th>Item</th>
-        <th class="angka">Qty</th>
-        <th class="angka">Cost</th>
-        <th class="angka">Value</th>
-        <th class="angka">Line cost</th>
-        <th class="angka">Line value</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for b in baris %}
-      <tr>
-        <td>
-          <strong>{{ b.nama }}</strong>
-          {% if b.satuan %}<div class="redup">per {{ b.satuan }}</div>{% endif %}
-        </td>
-        <td class="angka">{{ b.qty }}</td>
-        {# The snapshot, not today's catalog price. Editing the item in /items
-           leaves these two columns exactly as they are. #}
-        <td class="angka redup">{{ b.cost | rupiah }}</td>
-        <td class="angka redup">{{ b.value | rupiah }}</td>
-        <td class="angka">{{ (b.qty * b.cost) | rupiah }}</td>
-        <td class="angka">{{ (b.qty * b.value) | rupiah }}</td>
-        <td class="aksi">
-          <div class="aksi-grup">
-            <form method="post" action="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/hapus">
-              <button type="submit" class="outline btn-mini btn-mati">Remove</button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="7" class="kosong">
-          Nothing in this package yet. Add the first line below — the catalog
-          price is copied in as it stands today and stays put afterwards.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-    {% if baris %}
-    {# Totals in the table's own foot, so they line up under the columns they
-       add up. Recomputed server-side on every add and remove; no script. #}
-    <tfoot>
-      <tr>
-        <td colspan="4">Total</td>
-        <td class="angka">{{ r.cost_pakai | rupiah }}</td>
-        <td class="angka">{{ r.value_total | rupiah }}</td>
-        <td></td>
-      </tr>
-    </tfoot>
-    {% endif %}
-  </table>
+  {% include "_sponsor_package.html" %}
 </section>
 
 <section>
@@ -131,26 +30,20 @@
   {% if pilihan %}
   <form method="post" action="/sponsors/{{ sponsor.id }}/items"
         class="form-rapat form-vendor">
-    <div class="grid-isian">
-      <label>
-        Item
-        <select name="item_id" {% if errors.item_id %}aria-invalid="true"{% endif %}>
-          <option value="">Choose an item</option>
-          {% for i in pilihan %}
-          <option value="{{ i.id }}" {% if v is defined and v.item_id == i.id|string %}selected{% endif %}>{{ i.nama }}{% if i.satuan %} ({{ i.satuan }}){% endif %}</option>
-          {% endfor %}
-        </select>
-        {% if errors.item_id %}<small>{{ errors.item_id }}</small>
-        {% else %}<small class="redup">Active catalog items not already on this package.</small>{% endif %}
-      </label>
-
-      <label>
-        Quantity
-        <input name="qty" value="{{ v.qty if v is defined else '' }}" placeholder="e.g. 12"
-               {% if errors.qty %}aria-invalid="true"{% endif %}>
-        {% if errors.qty %}<small>{{ errors.qty }}</small>{% endif %}
-      </label>
-    </div>
+    {# Item only. The line lands at qty 1 and is adjusted in the table above,
+       which is also the answer for an item already in the package — the row
+       there increments rather than a second one appearing. #}
+    <label>
+      Item
+      <select name="item_id" {% if errors.item_id %}aria-invalid="true"{% endif %}>
+        <option value="">Choose an item</option>
+        {% for i in pilihan %}
+        <option value="{{ i.id }}" {% if v is defined and v.item_id == i.id|string %}selected{% endif %}>{{ i.nama }}{% if i.satuan %} ({{ i.satuan }}){% endif %}</option>
+        {% endfor %}
+      </select>
+      {% if errors.item_id %}<small>{{ errors.item_id }}</small>
+      {% else %}<small class="redup">Active catalog items not already on this package.</small>{% endif %}
+    </label>
 
     <div class="baris-aksi">
       <button type="submit">Add line</button>

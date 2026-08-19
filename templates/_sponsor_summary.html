@@ -1,0 +1,48 @@
+{# The five derived values and the over-budget notice, as one element.
+
+   Both change together when a quantity moves — the totals shift and the
+   package can cross its budget in either direction — so they share one id and
+   swap as one. On a qty request this comes back out of band beside the package
+   table, the same mechanism _vendor_stats.html uses for the /vendors chips:
+   the route sets `oob`, and only then does the wrapper carry hx-swap-oob. #}
+<div id="ringkasan-sponsor" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {# Always visible, above everything else on the page: these five are the
+     reason staff open this screen. Rebuilt from the database on every change. #}
+  <dl class="ringkas-paket">
+    <div>
+      <dt>Budget</dt>
+      <dd>{{ r.budget | rupiah }}</dd>
+    </div>
+    <div>
+      <dt>Cost used</dt>
+      <dd>{{ r.cost_pakai | rupiah }}</dd>
+    </div>
+    <div>
+      <dt>Remaining</dt>
+      {# Sign outside the currency symbol: "Rp -750.000" reads as a broken
+         amount rather than a negative one. #}
+      <dd class="{{ 'nilai-minus' if r.sisa < 0 }}">{% if r.sisa < 0 %}−{{ (-r.sisa) | rupiah }}{% else %}{{ r.sisa | rupiah }}{% endif %}</dd>
+    </div>
+    <div>
+      <dt>Total value</dt>
+      <dd>{{ r.value_total | rupiah }}</dd>
+    </div>
+    <div>
+      <dt>Value</dt>
+      <dd>{{ "%.2f"|format(r.multiple) }}x</dd>
+    </div>
+  </dl>
+
+  {# A warning, not a blocker — the same shape the rundown uses when it runs
+     past the venue limit. Staff may knowingly overspend, so nothing here is
+     disabled. #}
+  {% if r.sisa < 0 %}
+  <article class="peringatan">
+    <strong>This package is over budget.</strong>
+    It uses {{ r.cost_pakai | rupiah }} against a budget of {{ r.budget | rupiah }},
+    {{ (-r.sisa) | rupiah }} more than the {{ sponsor.persen_budget }}% share of
+    this contribution. Remove a line, or raise the share if the overspend is
+    agreed.
+  </article>
+  {% endif %}
+</div>

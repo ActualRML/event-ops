@@ -8,8 +8,6 @@ plus the sponsor's own kontribusi, worked out on the way to the template.
 The printed sheet is the one page here a sponsor reads, so it is Indonesian and
 it is built from a context that carries no cost at all — see sponsor_print."""
 
-import sqlite3
-
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
@@ -19,9 +17,33 @@ from deps import parse_harga, templates
 
 router = APIRouter()
 
-# What a quantity field says when it is not a number. The parse is the money
-# parser's — grouped digits and all — but the example has to be a count.
-CONTOH_QTY = "a whole number of units, e.g. 12"
+# A package line is a count of things at one event. Four figures is already
+# absurd for a booth package; the cap exists so a typo in the box cannot write
+# a number the totals row has to render.
+QTY_MAKS = 9999
+
+
+def parse_qty(raw: str) -> int | None:
+    """Read the typed quantity box. Returns a clamped qty, or None when there
+    is no number in it at all.
+
+    Clamped rather than rejected: the box is edited in place beside a stepper,
+    with nowhere to put an error message, so an out-of-range number becomes the
+    nearest allowed one. A blank or non-numeric entry leaves the line alone."""
+    teks = (raw or "").strip().replace(".", "").replace(",", "")
+    if not teks.isdigit():
+        return None
+    return max(1, min(QTY_MAKS, int(teks)))
+
+
+def muat_baris(sponsor_id: int, line_id: int):
+    """One package line, checked against the sponsor in the URL. A line id
+    belonging to another sponsor is a 404, not somebody else's row edited
+    through this page."""
+    baris = db.get_sponsor_item(line_id)
+    if baris is None or baris["sponsor_id"] != sponsor_id:
+        raise HTTPException(status_code=404, detail="Line not found")
+    return baris
 
 
 def parse_persen(raw: str) -> tuple[int | None, str | None]:
@@ -122,10 +144,15 @@ def form_context(request: Request, sponsor, v: dict, errors: dict) -> dict:
     }
 
 
-def muat_detail(request: Request, sponsor_id: int, errors: dict) -> dict:
+def muat_detail(request: Request, sponsor_id: int, errors: dict,
+                oob: bool = False) -> dict:
     """Everything the staff detail page renders, rebuilt from the database on
-    every add and every remove — the totals are never carried in the session or
-    patched in the browser."""
+    every add, every remove and every quantity change — the totals are never
+    carried in the session or patched in the browser.
+
+    oob is for a quantity swap, which returns the package table alone: it tells
+    the table partial to bring the summary with it out of band, since the
+    totals and the budget warning both move when a quantity does."""
     sponsor = db.get_sponsor(sponsor_id)
     if sponsor is None:
         raise HTTPException(status_code=404, detail="Sponsor not found")
@@ -137,7 +164,22 @@ def muat_detail(request: Request, sponsor_id: int, errors: dict) -> dict:
         "r": ringkasan(sponsor, db.sponsor_totals(sponsor_id)),
         "pilihan": db.items_available_for_sponsor(sponsor_id),
         "errors": errors,
+        "oob": oob,
     }
+
+
+def jawab_qty(request: Request, sponsor_id: int):
+    """What a quantity change sends back.
+
+    HTMX gets the package table plus the summary out of band. A plain form post
+    — no JS, so the box's own action fired — gets a redirect to the page it
+    came from, which re-renders both from the same context builder."""
+    if request.headers.get("HX-Request") == "true":
+        return templates.TemplateResponse(
+            request, "_sponsor_package.html",
+            muat_detail(request, sponsor_id, {}, oob=True),
+        )
+    return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
 
 
 @router.get("/sponsors")
@@ -269,15 +311,15 @@ async def sponsor_item_add(
     request: Request,
     sponsor_id: int,
     item_id: str = Form(""),
-    qty: str = Form(""),
 ):
+    """Add one line at qty 1. The quantity is adjusted in the table afterwards,
+    which is why this form no longer asks for one."""
     if db.get_sponsor(sponsor_id) is None:
         raise HTTPException(status_code=404, detail="Sponsor not found")
 
     errors = {}
     # Only what the picker actually offered: active, and not already on this
-    # package. A hand-posted id for an archived or duplicated item is rejected
-    # here rather than reaching the UNIQUE.
+    # package. A hand-posted id for an archived item is rejected here.
     boleh = {i["id"] for i in db.items_available_for_sponsor(sponsor_id)}
     try:
         pilihan = int(item_id)
@@ -288,33 +330,68 @@ async def sponsor_item_add(
     elif pilihan not in boleh:
         errors["item_id"] = "That item is not available for this sponsor."
 
-    jumlah, pesan = parse_harga(qty, label="Quantity", contoh=CONTOH_QTY)
-    if pesan:
-        errors["qty"] = pesan
-
     if errors:
         konteks = muat_detail(request, sponsor_id, errors)
-        # The submitted values ride back so the row is not retyped.
-        konteks["v"] = {"item_id": item_id, "qty": qty}
+        # The submitted value rides back so the picker is not reset.
+        konteks["v"] = {"item_id": item_id}
         return templates.TemplateResponse(
             request, "sponsor_detail.html", konteks, status_code=422
         )
 
-    try:
-        db.add_sponsor_item(sponsor_id, pilihan, jumlah)
-    except sqlite3.IntegrityError:
-        # UNIQUE(sponsor_id, item_id): a second submit got here first. The line
-        # exists, which is what was wanted, so this is not an error to show.
-        pass
+    # No IntegrityError to catch any more: add_sponsor_item upserts, so a race
+    # that gets two requests past the check above increments once rather than
+    # raising, and a second row still cannot exist.
+    db.add_sponsor_item(sponsor_id, pilihan)
     return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
+
+
+@router.post("/sponsors/{sponsor_id}/items/{line_id}/qty")
+async def sponsor_item_qty_bump(
+    request: Request,
+    sponsor_id: int,
+    line_id: int,
+    delta: str = Form("0"),
+):
+    """The − and + buttons. A delta, never an absolute value: the write is
+    `qty = qty + ?` in SQL, so two clicks that overlap are two steps.
+
+    A step that would take the line below 1 is a no-op — the row is not
+    removed and CHECK(qty > 0) is never reached. Remove is the only delete."""
+    muat_baris(sponsor_id, line_id)
+    try:
+        langkah = int(delta)
+    except ValueError:
+        langkah = 0
+    # One step at a time. A hand-posted delta of 500 is not what the two
+    # buttons on the page can produce, and the typed box is the way to jump.
+    if langkah in (-1, 1):
+        db.bump_sponsor_item_qty(line_id, langkah)
+    return jawab_qty(request, sponsor_id)
+
+
+@router.post("/sponsors/{sponsor_id}/items/{line_id}/qty-exact")
+async def sponsor_item_qty_set(
+    request: Request,
+    sponsor_id: int,
+    line_id: int,
+    qty: str = Form(""),
+):
+    """The typed box. Absolute, and therefore idempotent — which is why it can
+    safely fire on both change and submit without a double edit mattering."""
+    muat_baris(sponsor_id, line_id)
+    jumlah = parse_qty(qty)
+    if jumlah is not None:
+        db.set_sponsor_item_qty(line_id, jumlah)
+    return jawab_qty(request, sponsor_id)
 
 
 @router.post("/sponsors/{sponsor_id}/items/{line_id}/hapus")
 async def sponsor_item_remove(sponsor_id: int, line_id: int):
-    if db.get_sponsor(sponsor_id) is None:
-        raise HTTPException(status_code=404, detail="Sponsor not found")
-    if not db.remove_sponsor_item(line_id):
-        raise HTTPException(status_code=404, detail="Line not found")
+    """Delete one line. Ownership is checked first, the same way the two
+    quantity routes check it: a line id belonging to another sponsor is a 404,
+    not a deletion carried out on somebody else's package through this URL."""
+    muat_baris(sponsor_id, line_id)
+    db.remove_sponsor_item(line_id)
     return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
 
 
