@@ -413,7 +413,11 @@
        14px below is the whole story. */
     /* Same width and gutter as the panel, so the brand lines up with the page
        title below it. */
-    .bilah nav { --pico-nav-element-spacing-vertical: 0; padding-block: 14px;
+    /* 12px, not the 14px this carried while the nav was four inline links: the
+       trigger is a real 34px control and a taller box than a line of text, so
+       12 + 34 + 12 + the 1px border is what keeps the bar at the 59px every
+       page's rhythm was measured against. Nothing below the header moves. */
+    .bilah nav { --pico-nav-element-spacing-vertical: 0; padding-block: 12px;
                  padding-inline: 24px;
                  max-width: min(1200px, calc(100% - 48px));
                  margin-inline: auto; }
@@ -422,15 +426,105 @@
     .merek { font-size: .78rem; font-weight: 600; letter-spacing: .07em;
              text-transform: uppercase; color: var(--pico-muted-color); }
 
-    nav a.tautan-nav { color: var(--pico-muted-color); text-decoration: none;
-                       font-size: .85rem; font-weight: 500;
-                       padding: .4rem .75rem; border-radius: .4rem; }
-    nav a.tautan-nav:hover { color: var(--pico-color);
-                             background: rgba(128, 138, 148, .14); }
-    nav a.tautan-nav[aria-current="page"] {
-      color: var(--pico-color); font-weight: 600;
+    /* ---- Collapsed nav menu -------------------------------------------
+       Pico v2's own <details class="dropdown"> carries the whole interaction —
+       open, close, and the outside-click backdrop it draws as
+       details.dropdown[open] > summary::before. There is no script here.
+
+       Every rule is scoped to .bilah: this stylesheet reaches every page, and
+       .dropdown is a Pico class a later page may want in its plain form.
+       px throughout, per the units rule.
+
+       On specificity — the two Pico rules being overridden are
+         details.dropdown > summary:not([role])          (0,2,2)
+         nav details.dropdown > summary:not([role])      (0,2,3)
+       and between them they set the select-shaped box: a 1px #cfd5e2 border,
+       5px radius, #fbfcfd fill, and a 50px height built from
+       --pico-nav-link-spacing-vertical. Carrying the same :not([role]) puts
+       these rules at (0,3,3), which clears both outright rather than leaning
+       on source order. */
+    .bilah details.menu-ringkas { position: relative; margin: 0;
+                                  border-bottom: none; }
+    /* The li is made a flex line so the summary cannot sit on a text baseline:
+       as an inline-level box it drags the line box taller than itself, which is
+       what put 51px of content in a 34px control's row. */
+    .bilah nav li:has(> details.menu-ringkas) {
+      display: flex; align-items: center;
+    }
+    /* 34px is the app's control height and this is a control outside a table
+       row: 7 + 20 + 7, no border. The rest reproduces what the four visible
+       links carried — 17px/500, radius 8px, muted, hover filling
+       rgba(128,138,148,.14) — so the header reads at the weight it always did. */
+    .bilah nav details.menu-ringkas > summary:not([role]) {
+      display: inline-flex; align-items: center; gap: 8px;
+      height: 34px; margin: 0; padding: 7px 14px;
+      background: transparent; border: none; border-radius: 8px;
+      font-size: 17px; font-weight: 500; line-height: 20px;
+      color: var(--pico-muted-color); cursor: pointer;
+      /* The disclosure triangle, both spellings — the standard property and
+         the WebKit pseudo older Chrome still needs. */
+      list-style: none;
+    }
+    .bilah details.menu-ringkas > summary::-webkit-details-marker { display: none; }
+    /* Pico draws its own chevron here. The hamburger is already the affordance
+       and two of them read as noise. ::after only — ::before is the backdrop
+       that closes the panel on an outside click, and must survive. */
+    .bilah details.menu-ringkas > summary::after { display: none; }
+    .bilah nav details.menu-ringkas > summary:not([role]):hover,
+    .bilah nav details.menu-ringkas > summary:not([role]):focus {
+      background: rgba(128, 138, 148, .14);
+    }
+    .bilah nav details.menu-ringkas[open] > summary:not([role]) {
       background: rgba(128, 138, 148, .16);
-      box-shadow: inset 0 -2px 0 0 var(--pico-color);
+    }
+    .bilah .ikon-menu { font-size: 19px; line-height: 1; }
+    /* The page name is the "where am I" signal the visible links used to
+       carry, so it takes the weight and the dark text — the same split
+       .chip-angka uses to put a value ahead of its label. */
+    .bilah .nama-halaman { font-weight: 600; color: var(--teks-gelap); }
+
+    /* The panel. Absolutely positioned, so it lies over the page instead of
+       pushing it down; nothing between it and <body> sets overflow, so nothing
+       clips it. Pico's own z-index: 99 stands — main.container sets none.
+       width: auto overrides Pico's width: 100%, which would otherwise size the
+       panel to the trigger. */
+    .bilah .menu-ringkas > summary + ul {
+      top: calc(100% + 6px); width: auto; min-width: 184px;
+      margin: 0; padding: 6px;
+      background: #fff; border: 1px solid #e4e7eb; border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(16, 24, 40, .10),
+                  0 1px 3px rgba(16, 24, 40, .06);
+    }
+    /* The :first-of-type and :last-of-type arms are not decoration: Pico adds
+       7.5px above the first row and below the last through
+       `details.dropdown > summary + ul li:first-of-type` (0,2,4), which a plain
+       li selector loses to. Naming the pseudo puts these at (0,3,3) and wins on
+       class count, so the panel's own 6px padding is the whole inset. */
+    .bilah .menu-ringkas > summary + ul li,
+    .bilah .menu-ringkas > summary + ul li:first-of-type,
+    .bilah .menu-ringkas > summary + ul li:last-of-type {
+      margin: 0; padding: 0; list-style: none;
+    }
+    /* margin: 0 is load-bearing: Pico pulls these links out by the row padding
+       it gives the li, and that padding is zeroed above. */
+    .bilah .menu-ringkas > summary + ul li a {
+      display: block; margin: 0; padding: 7px 10px; border-radius: 6px;
+      font-size: 15px; font-weight: 500; line-height: 1.35;
+      color: var(--teks-gelap); text-decoration: none;
+    }
+    /* Hover only. The current entry is left to Pico, which already fills
+       a[aria-current]:not([aria-current=false]) from
+       --pico-dropdown-hover-background-color — no class of our own. */
+    .bilah .menu-ringkas > summary + ul li a:hover {
+      background: rgba(128, 138, 148, .14);
+    }
+    /* The gap between doing the work and maintaining the catalogue. A styled
+       <li>, because the panel is a list and a rule between two of its items is
+       not itself an item. */
+    /* height: 0 because the row inherits Pico's 30px line box, and an empty li
+       would otherwise reserve a full row's worth of nothing above the rule. */
+    .bilah .menu-ringkas > summary + ul li[role="separator"] {
+      height: 0; margin: 6px 4px; border-top: 1px solid #eef0f3;
     }
 
     /* Vertical rhythm — the table is the content, so everything above it is
@@ -610,23 +704,62 @@
   </style>
 </head>
 <body>
+  {# Everything the drawer needs is computed inside this {% with %}, header
+     markup included. The block is a scope, so `path`, `kelompok` and `ns` exist
+     only for the nav and cannot reach a child template's {% block content %}.
+     Without it these were top-level assignments, which shadow a context key of
+     the same name in every child — silently, with no error and no missing-value
+     warning. #}
+  {% with %}
+  {# Active page from the request path — no extra context key to thread through
+     every handler. Starlette puts `request` in the context of every
+     TemplateResponse, so it is available on every page. #}
+  {% set path = request.url.path if request else "" %}
+  {# The nav's one declaration. Two groups: what you do, then what you
+     maintain — so the separator in the panel is the gap between them rather
+     than an entry in the list. The trigger label and the marked entry are both
+     derived from this, so the two can never disagree.
+     Rundown and SPK are deliberately absent: both are per-event or per-batch
+     with no top-level list, and stay reachable from Tracker. #}
+  {% set kelompok = [
+       [("/send", "Send RFQ"), ("/tracker", "Tracker")],
+       [("/vendors", "Vendors"), ("/items", "Items"), ("/sponsors", "Sponsors")],
+     ] %}
+  {% set ns = namespace(disini=none) %}
+  {% for grup in kelompok %}{% for tujuan, nama in grup %}
+    {% if path.startswith(tujuan) %}{% set ns.disini = nama %}{% endif %}
+  {% endfor %}{% endfor %}
+  {# /categories has no entry of its own — it is reached from Vendors and
+     returns there, so it lights Vendors, exactly as it did when the four links
+     were visible. #}
+  {% if path.startswith("/categories") %}{% set ns.disini = "Vendors" %}{% endif %}
+
   <header class="bilah">
     <nav class="container">
       <ul>
         <li class="merek">Vendor RFQ Blast</li>
-      </ul>
-      {# Active page from the request path — no extra context key to thread
-         through every handler. #}
-      {% set path = request.url.path if request else "" %}
-      <ul>
-        {# /categories has no tab of its own — it is reached from the Vendor page
-           and returns there, so Vendor stays lit. #}
-        <li><a class="tautan-nav" href="/vendors" {% if path.startswith("/vendors") or path.startswith("/categories") %}aria-current="page"{% endif %}>Vendors</a></li>
-        <li><a class="tautan-nav" href="/send" {% if path.startswith("/send") %}aria-current="page"{% endif %}>Send</a></li>
-        <li><a class="tautan-nav" href="/tracker" {% if path.startswith("/tracker") %}aria-current="page"{% endif %}>Tracker</a></li>
+        <li>
+          {# Pico v2's native disclosure dropdown. No script: the open and close
+             are the browser's own <details> behaviour. #}
+          <details class="dropdown menu-ringkas">
+            <summary>
+              <span class="ikon-menu" aria-hidden="true">&#9776;</span>
+              <span class="nama-halaman">{{ ns.disini or "Menu" }}</span>
+            </summary>
+            <ul>
+              {% for grup in kelompok %}
+              {% if not loop.first %}<li role="separator"></li>{% endif %}
+              {% for tujuan, nama in grup %}
+              <li><a href="{{ tujuan }}" {% if ns.disini == nama %}aria-current="page"{% endif %}>{{ nama }}</a></li>
+              {% endfor %}
+              {% endfor %}
+            </ul>
+          </details>
+        </li>
       </ul>
     </nav>
   </header>
+  {% endwith %}
 
   <main class="container">
     {% block content %}{% endblock %}
