@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Paket sponsor — {{ nama_pt }}{% endblock %}
+
+{# The one page here a sponsor reads, so it is Indonesian throughout — the same
+   rule the email body, the SPK document and the printed rundown follow.
+
+   No .layar/.cetak pairs: the rundown needs them because one DOM serves a
+   staff-facing screen and a vendor-facing printout, while this route exists
+   only to be printed and is Indonesian in both. The two buttons at the foot are
+   the exception and stay English — a sponsor never opens this URL, staff do,
+   and @media print hides them anyway.
+
+   Every number on this sheet is sponsor-facing. cost, line cost, the budget,
+   its share, what is left of it and the multiple are internal and are not in
+   this template's context at all, so none of them can reach paper. #}
+{% block content %}
+<hgroup>
+  <h2>{{ judul_acara }}</h2>
+  <p class="chips">
+    <span class="chip">tanggal <span class="chip-angka">{{ tanggal_acara | tanggal or "belum ditentukan" }}</span></span>
+    {% if lokasi %}
+    <span class="chip">lokasi <span class="chip-angka">{{ lokasi }}</span></span>
+    {% endif %}
+  </p>
+</hgroup>
+
+<section>
+  <h3>Paket sponsor</h3>
+  <p class="alamat-lembar">
+    Kepada: <strong>{{ nama_pt }}</strong>
+  </p>
+  <p class="kalimat-lembar">
+    Untuk kontribusi sebesar <strong>{{ kontribusi | rupiah }}</strong>,
+    Anda menerima:
+  </p>
+
+  <table class="tabel tabel-lembar">
+    <colgroup>
+      <col style="width: 40%">
+      <col style="width: 14%">
+      <col style="width: 23%">
+      <col style="width: 23%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th class="angka">Jumlah</th>
+        <th class="angka">Nilai satuan</th>
+        <th class="angka">Nilai</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in baris %}
+      <tr>
+        <td>{{ b.nama }}</td>
+        {# Satuan sits with the quantity, where it reads as "6 titik" rather
+           than needing a column of its own. #}
+        <td class="angka">{{ b.qty }}{% if b.satuan %} {{ b.satuan }}{% endif %}</td>
+        <td class="angka">{{ b.value | rupiah }}</td>
+        <td class="angka">{{ b.nilai | rupiah }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4" class="kosong">Belum ada item dalam paket ini.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% if baris %}
+    <tfoot>
+      <tr>
+        <td colspan="3">Total nilai benefit</td>
+        <td class="angka">{{ nilai_total | rupiah }}</td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</section>
+
+{# Screen only: the print block hides every action row in the app. #}
+<div class="baris-aksi-kanan">
+  <a href="/sponsors/{{ sponsor_id }}" role="button" class="secondary outline">Back</a>
+  <button type="button" onclick="window.print()">Print</button>
+</div>
+{% endblock %}

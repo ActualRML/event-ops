@@ -318,6 +318,52 @@
     /* Two page actions, right-aligned, primary last. */
     .aksi-halaman { display: flex; justify-content: flex-end; gap: 8px; }
     .aksi-halaman > * { flex: 0 0 auto; }
+    /* Sponsor summary strip. Five derived values, always on the detail page.
+       Same read-only surface as .konteks and .pratinjau — #fbfcfd on 1px
+       #e4e7eb at radius 8px — but its own rule rather than a second class on
+       .konteks, which pins its third and fifth cells full-width for the SPK
+       form and would break a five-across strip. */
+    .ringkas-paket { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+                     gap: 10px 20px; margin: 0 0 20px;
+                     background: #fbfcfd; border: 1px solid #e4e7eb;
+                     border-radius: 8px; padding: 12px 14px; }
+    .ringkas-paket dt { font-size: 11px; text-transform: uppercase;
+                        letter-spacing: .04em; color: var(--pico-muted-color); }
+    /* 15px, not the 38px of .metrik-angka: these are five rupiah amounts on one
+       row, and a headline size would wrap every one of them. */
+    .ringkas-paket dd { margin: 2px 0 0; font-size: 15px; font-weight: 500;
+                        line-height: 1.4; color: var(--teks-gelap);
+                        overflow-wrap: anywhere; }
+    /* Over budget. The app's failure red, and the only colour on the strip. */
+    .nilai-minus { color: #b3261e; }
+    @media (max-width: 900px) {
+      .ringkas-paket { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      .ringkas-paket { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    /* Table feet — the package totals and the printed sheet's total. A line
+       above, weight on the numbers, and no bottom hairline so the panel border
+       or the page edge closes the table. */
+    .tabel tfoot td { border-top: 1px solid #e7eaf0; border-bottom: none;
+                      font-weight: 600; padding-top: .5rem; }
+
+    /* The printed sponsor sheet. Body copy rather than form furniture: the
+       address line and the sentence that introduces the table. */
+    .alamat-lembar, .kalimat-lembar { margin: 0 0 12px; font-size: 14px;
+                                      line-height: 1.5; }
+    .kalimat-lembar { margin-bottom: 16px; }
+
+    /* Archiving, on the item form. It is the only section on that page, so
+       main section:first-of-type strips the divider its h3 would otherwise
+       draw — the same hairline and 16px go on the block instead, which costs
+       no specificity contest and leaves the h3 taking its font from the shared
+       section rule. */
+    .bagian-arsip { border-top: 1px solid #eef0f3; padding-top: 16px;
+                    margin-top: 20px; }
+    .bagian-arsip p { margin: 0 0 12px; font-size: 12px; line-height: 1.5; }
+
     /* A single short field reads better capped than spanning the full panel. */
     .form-sempit { max-width: 420px; }
     .kategori-ada { margin-top: 20px; font-size: 13px; line-height: 1.5;
@@ -536,6 +582,14 @@
       .status-batch, .status-batch strong { color: #000; }
       .tabel th { border-bottom-color: #000; }
       .tabel td { border-bottom-color: #999; }
+      /* The totals line on the sponsor sheet — the rule under it is the only
+         thing separating a total from the rows it adds up, so it cannot be a
+         grey a mono printer might drop. */
+      .tabel tfoot td { border-top-color: #000; }
+      /* Body copy on the sheet: the address line and the sentence over the
+         table. Both are already black through <body>, restated here so a later
+         colour on either does not quietly print grey. */
+      .alamat-lembar, .kalimat-lembar { color: #000; }
 
       /* Chips lose their pills and read as a run of plain context under the
          title. normal wrapping because a venue name is long and paper is

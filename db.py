@@ -189,6 +189,86 @@ def set_vendor_aktif(vendor_id: int, aktif: int) -> None:
         conn.commit()
 
 
+def list_catalog_items(include_inactive: bool = False) -> list[sqlite3.Row]:
+    """Catalog items by name. The column is COLLATE NOCASE, so the ordering is
+    case-insensitive without saying so here.
+
+    No join and no grouping: the table used to carry a category_id into the
+    vendor-side `categories` list, which put two different domains on one key.
+    See the note in schema.sql.
+
+    Archived items are left out unless asked for: the page hides them by
+    default and the toggle is what brings them back."""
+    sql = "SELECT * FROM items"
+    if not include_inactive:
+        sql += " WHERE aktif = 1"
+    sql += " ORDER BY nama"
+
+    with closing(get_conn()) as conn:
+        return conn.execute(sql).fetchall()
+
+
+def get_catalog_item(item_id: int) -> sqlite3.Row | None:
+    """One catalog item by id, or None. Archived rows come back too — the edit
+    form has to be able to open one."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM items WHERE id = ?", (item_id,)
+        ).fetchone()
+
+
+def item_name_exists(nama: str, exclude_id: int | None = None) -> bool:
+    """The UNIQUE COLLATE NOCASE on the column is the real guard; this only
+    exists so the form can say which name collided instead of raising.
+    exclude_id lets an edit keep its own name — same shape as
+    category_exists, one argument wider because items can be renamed."""
+    sql = "SELECT 1 FROM items WHERE nama = ? COLLATE NOCASE"
+    params: list[object] = [nama]
+    if exclude_id is not None:
+        sql += " AND id <> ?"
+        params.append(exclude_id)
+
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchone() is not None
+
+
+def create_catalog_item(nama: str, satuan: str, cost: int, value: int,
+                        catatan: str) -> int:
+    """Insert one catalog item. Returns the new id. The optional text fields are
+    stored as '' rather than NULL, so nothing downstream tests for both."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            """INSERT INTO items (nama, satuan, cost, value, catatan)
+               VALUES (?, ?, ?, ?, ?)""",
+            (nama, satuan, cost, value, catatan),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def update_catalog_item(item_id: int, nama: str, satuan: str, cost: int,
+                        value: int, catatan: str) -> None:
+    """Overwrite one catalog item. aktif is left out of the statement
+    deliberately — archiving has its own route and its own function, so an
+    edit can never quietly restore a row."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            """UPDATE items
+                  SET nama = ?, satuan = ?, cost = ?, value = ?, catatan = ?
+                WHERE id = ?""",
+            (nama, satuan, cost, value, catatan, item_id),
+        )
+        conn.commit()
+
+
+def set_catalog_item_aktif(item_id: int, aktif: int) -> None:
+    """Archive or restore one item, to an explicit value. Nothing deletes a
+    catalog row — a price that was quoted once stays on the books."""
+    with closing(get_conn()) as conn:
+        conn.execute("UPDATE items SET aktif = ? WHERE id = ?", (aktif, item_id))
+        conn.commit()
+
+
 def create_event(judul_acara: str, tanggal_acara: str, lokasi: str,
                  conn: sqlite3.Connection | None = None) -> int:
     """Insert one event. Returns the new id."""
@@ -707,6 +787,192 @@ def move_item(item_id: int, direction: str) -> bool:
         )
         conn.commit()
         return True
+
+
+# Sponsors need their event's title, date and location on the printed sheet, so
+# the join is written once here rather than left to each caller.
+SQL_SPONSOR_WITH_EVENT = """
+    SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi
+      FROM sponsors s
+      JOIN events e ON e.id = s.event_id
+"""
+
+
+def list_sponsors(event_id: int | None = None) -> list[sqlite3.Row]:
+    """Sponsors with their event and their package tallied up.
+
+    event_id None means every sponsor, newest event first and alphabetical
+    inside it — which is the grouping the list page renders. Passing an id
+    narrows to one event.
+
+    The two sums come from the snapshot columns, never from items, so a row
+    here reports what the package was agreed at. COALESCE because a sponsor
+    with no lines yet still has to appear, at zero."""
+    # Written out rather than built on SQL_SPONSOR_WITH_EVENT: this one needs a
+    # LEFT JOIN and a GROUP BY, and the shared string is the plain row shape.
+    sql = """
+        SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi,
+               COUNT(si.id) AS baris,
+               COALESCE(SUM(si.qty * si.cost), 0)  AS cost_pakai,
+               COALESCE(SUM(si.qty * si.value), 0) AS value_total
+          FROM sponsors s
+          JOIN events e ON e.id = s.event_id
+          LEFT JOIN sponsor_item si ON si.sponsor_id = s.id
+    """
+    params: list[object] = []
+    if event_id is not None:
+        sql += " WHERE s.event_id = ?"
+        params.append(event_id)
+    sql += " GROUP BY s.id ORDER BY s.event_id DESC, s.nama_pt"
+
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def get_sponsor(sponsor_id: int) -> sqlite3.Row | None:
+    """One sponsor by id, or None, carrying its event's fields through."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            SQL_SPONSOR_WITH_EVENT + " WHERE s.id = ?", (sponsor_id,)
+        ).fetchone()
+
+
+def sponsor_name_exists(event_id: int, nama_pt: str,
+                        exclude_id: int | None = None) -> bool:
+    """The UNIQUE(event_id, nama_pt) is the real guard; this only exists so the
+    form can say which name collided. Scoped to the event — the same company
+    may sponsor a different event. exclude_id lets an edit keep its own name."""
+    sql = """SELECT 1 FROM sponsors
+              WHERE event_id = ? AND nama_pt = ? COLLATE NOCASE"""
+    params: list[object] = [event_id, nama_pt]
+    if exclude_id is not None:
+        sql += " AND id <> ?"
+        params.append(exclude_id)
+
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchone() is not None
+
+
+def create_sponsor(event_id: int, nama_pt: str, kontribusi: int,
+                   persen_budget: int, catatan: str) -> int:
+    """Insert one sponsor. Returns the new id."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            """INSERT INTO sponsors
+                      (event_id, nama_pt, kontribusi, persen_budget, catatan)
+               VALUES (?, ?, ?, ?, ?)""",
+            (event_id, nama_pt, kontribusi, persen_budget, catatan),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def update_sponsor(sponsor_id: int, nama_pt: str, kontribusi: int,
+                   persen_budget: int, catatan: str) -> None:
+    """Overwrite one sponsor's own fields. event_id is left out deliberately:
+    moving a sponsor between events would carry a package priced for one day
+    onto another, and the package lines are what make that wrong."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            """UPDATE sponsors
+                  SET nama_pt = ?, kontribusi = ?, persen_budget = ?, catatan = ?
+                WHERE id = ?""",
+            (nama_pt, kontribusi, persen_budget, catatan, sponsor_id),
+        )
+        conn.commit()
+
+
+def list_sponsor_items(sponsor_id: int) -> list[sqlite3.Row]:
+    """One sponsor's package lines, in the order they were added.
+
+    The join to items supplies the name and unit only — display text, which is
+    fine to follow the catalog. cost and value come from sponsor_item and are
+    never read from items here: those are the snapshot, and the whole point is
+    that they do not move when the catalog does."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT si.id, si.item_id, si.qty, si.cost, si.value,
+                      i.nama, i.satuan
+                 FROM sponsor_item si
+                 JOIN items i ON i.id = si.item_id
+                WHERE si.sponsor_id = ?
+                ORDER BY si.id""",
+            (sponsor_id,),
+        ).fetchall()
+
+
+def items_available_for_sponsor(sponsor_id: int) -> list[sqlite3.Row]:
+    """Active catalog items this sponsor does not already have a line for.
+
+    Archived items are out because the picker is for building a package now.
+    An item already on the package is out because UNIQUE(sponsor_id, item_id)
+    would refuse it — changing a quantity means removing the line and adding
+    it again, which re-snapshots the price, and that is the honest behaviour."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT * FROM items
+                WHERE aktif = 1
+                  AND id NOT IN (SELECT item_id FROM sponsor_item
+                                  WHERE sponsor_id = ?)
+                ORDER BY nama""",
+            (sponsor_id,),
+        ).fetchall()
+
+
+def add_sponsor_item(sponsor_id: int, item_id: int, qty: int) -> int | None:
+    """Add one line, snapshotting the catalog price into it.
+
+    Returns the new line id, or None when the item does not exist. The read of
+    items and the insert share one transaction, so the price written is the one
+    that was on the catalog at this instant and cannot be half-updated by a
+    concurrent edit. After this the line never consults items for money again.
+
+    A second line for the same (sponsor_id, item_id) raises IntegrityError."""
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        item = conn.execute(
+            "SELECT cost, value FROM items WHERE id = ?", (item_id,)
+        ).fetchone()
+        if item is None:
+            conn.commit()
+            return None
+        cur = conn.execute(
+            """INSERT INTO sponsor_item (sponsor_id, item_id, qty, cost, value)
+               VALUES (?, ?, ?, ?, ?)""",
+            (sponsor_id, item_id, qty, item["cost"], item["value"]),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def remove_sponsor_item(line_id: int) -> bool:
+    """Delete one line. Returns True when a row went, False when the id is
+    unknown, so a route can 404 without looking it up first. Lines are the one
+    thing here that is genuinely deleted — an unwanted line is a mistake being
+    corrected, not a record worth keeping."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute("DELETE FROM sponsor_item WHERE id = ?", (line_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def sponsor_totals(sponsor_id: int) -> dict:
+    """The two sums the summary strip is built from, counted in SQL every time.
+
+    Both read the snapshot columns. Everything else on the strip — budget, what
+    is left, the multiple — is arithmetic on these two plus the sponsor's own
+    kontribusi, and is worked out at render rather than stored."""
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS baris,
+                      COALESCE(SUM(qty * cost), 0)  AS cost_pakai,
+                      COALESCE(SUM(qty * value), 0) AS value_total
+                 FROM sponsor_item WHERE sponsor_id = ?""",
+            (sponsor_id,),
+        ).fetchone()
+
+    return {"baris": row["baris"], "cost_pakai": row["cost_pakai"],
+            "value_total": row["value_total"]}
 
 
 def set_vendor_categories(vendor_id: int, category_ids) -> None:

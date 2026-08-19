@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ judul }} — Vendor RFQ Blast{% endblock %}
+
+{# One template, both modes. `item` is the row being edited, or undefined when
+   issuing a new one, and that single value decides the title, the post target
+   and whether the archive block is on the page — the fields themselves are
+   written once, so create and edit cannot drift apart. #}
+{% block content %}
+<hgroup class="judul-rapat">
+  <h2>{{ judul }}</h2>
+</hgroup>
+
+{% if errors %}
+<article>
+  <strong>Could not save the item.</strong> Check the fields flagged below.
+</article>
+{% endif %}
+
+<form method="post" action="{{ action }}" class="form-rapat form-vendor">
+  {# Short fields two per row — four of them now, so the grid comes out even. #}
+  <div class="grid-isian">
+    <label>
+      Item name
+      <input name="nama" value="{{ v.nama }}" autofocus
+             placeholder="e.g. Tenda roder 10x20"
+             {% if errors.nama %}aria-invalid="true"{% endif %}>
+      {% if errors.nama %}<small>{{ errors.nama }}</small>{% endif %}
+    </label>
+
+    <label>
+      Unit
+      <input name="satuan" value="{{ v.satuan }}" placeholder="e.g. pcs, set, titik">
+    </label>
+
+    <label>
+      Cost (rupiah)
+      <input name="cost" value="{{ v.cost }}"
+             placeholder="e.g. 270.000"
+             {% if errors.cost %}aria-invalid="true"{% endif %}>
+      {% if errors.cost %}<small>{{ errors.cost }}</small>
+      {% else %}<small class="redup">What this costs to buy, per unit.</small>{% endif %}
+    </label>
+
+    <label>
+      Value (rupiah)
+      <input name="value" value="{{ v.value }}"
+             placeholder="e.g. 3.000.000"
+             {% if errors.value %}aria-invalid="true"{% endif %}>
+      {% if errors.value %}<small>{{ errors.value }}</small>
+      {% else %}<small class="redup">The sponsor-facing rate, per unit.</small>{% endif %}
+    </label>
+  </div>
+
+  <label>
+    Notes
+    <textarea name="catatan" rows="2">{{ v.catatan }}</textarea>
+  </label>
+
+  <div class="baris-aksi">
+    <button type="submit">Save</button>
+    <a href="/items" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+
+{% if item %}
+{# Its own form, so it cannot sit inside the one above — and its own block,
+   because it is the one control on this page that does not go through Save. #}
+<section class="bagian-arsip">
+  <h3>{{ "Archive" if item.aktif else "Restore" }}</h3>
+  <p class="redup">
+    {% if item.aktif %}
+    An archived item drops off the catalog list and stays on the books. Nothing
+    is deleted — a price that was quoted once keeps its record.
+    {% else %}
+    This item is archived. Restoring puts it back on the catalog list.
+    {% endif %}
+  </p>
+  <form method="post" action="/items/{{ item.id }}/arsip" class="baris-aksi">
+    <button type="submit" class="outline btn-mati">
+      {{ "Archive this item" if item.aktif else "Restore this item" }}
+    </button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

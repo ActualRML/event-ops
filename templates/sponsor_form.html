@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ judul }} — Vendor RFQ Blast{% endblock %}
+
+{# One template, both modes. `sponsor` is the row being edited, or undefined
+   when adding, and that single value decides the title, the post target and
+   whether the event is still a choice. #}
+{% block content %}
+<hgroup class="judul-rapat">
+  <h2>{{ judul }}</h2>
+</hgroup>
+
+{% if errors %}
+<article>
+  <strong>Could not save the sponsor.</strong> Check the fields flagged below.
+</article>
+{% endif %}
+
+<form method="post" action="{{ action }}" class="form-rapat form-vendor">
+  {% if sponsor %}
+  {# The event is fixed after creation: the package lines are priced for one
+     specific day, and moving the sponsor would carry them onto another. #}
+  <dl class="konteks">
+    <div>
+      <dt>Event</dt>
+      <dd>{{ sponsor.judul_acara }}</dd>
+    </div>
+    <div>
+      <dt>Event date</dt>
+      <dd>{{ sponsor.tanggal_acara | date or "—" }}</dd>
+    </div>
+  </dl>
+  {% endif %}
+
+  <div class="grid-isian">
+    {% if not sponsor %}
+    <label>
+      Event
+      <select name="event_id" {% if errors.event_id %}aria-invalid="true"{% endif %}>
+        <option value="">Choose an event</option>
+        {% for e in events %}
+        <option value="{{ e.id }}" {% if v.event_id == e.id|string %}selected{% endif %}>{{ e.judul_acara }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.event_id %}<small>{{ errors.event_id }}</small>{% endif %}
+    </label>
+    {% endif %}
+
+    <label>
+      Sponsor name
+      <input name="nama_pt" value="{{ v.nama_pt }}" autofocus
+             placeholder="e.g. PT Boga Rasa Nusantara"
+             {% if errors.nama_pt %}aria-invalid="true"{% endif %}>
+      {% if errors.nama_pt %}<small>{{ errors.nama_pt }}</small>{% endif %}
+    </label>
+
+    <label>
+      Contribution (rupiah)
+      <input name="kontribusi" value="{{ v.kontribusi }}"
+             placeholder="e.g. 50.000.000"
+             {% if errors.kontribusi %}aria-invalid="true"{% endif %}>
+      {% if errors.kontribusi %}<small>{{ errors.kontribusi }}</small>
+      {% else %}<small class="redup">What the sponsor pays for this event.</small>{% endif %}
+    </label>
+
+    <label>
+      Budget share (%)
+      <input name="persen_budget" value="{{ v.persen_budget }}"
+             placeholder="12"
+             {% if errors.persen_budget %}aria-invalid="true"{% endif %}>
+      {% if errors.persen_budget %}<small>{{ errors.persen_budget }}</small>
+      {% else %}<small class="redup">Share of the contribution the package may spend.</small>{% endif %}
+    </label>
+  </div>
+
+  <label>
+    Notes
+    <textarea name="catatan" rows="2">{{ v.catatan }}</textarea>
+  </label>
+
+  <div class="baris-aksi">
+    <button type="submit">Save</button>
+    <a href="{{ '/sponsors/' ~ sponsor.id if sponsor else '/sponsors' }}"
+       role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+{% endblock %}

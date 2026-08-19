@@ -81,6 +81,27 @@ INSERT INTO vendor_categories (vendor_id, category_id) VALUES
     (24, 6),
     (25, 1), (25, 2);
 
+-- Ten catalog items, priced the way procurement actually quotes them: cost is
+-- what the vendor charges per unit, value the sponsor-facing rate, and the
+-- multiple between them is worked out on the page rather than stored.
+-- Ungrouped on purpose — see the note on the items table in schema.sql.
+-- Names and notes are Indonesian: procurement types them, and they read the
+-- same on a printed sheet as on screen.
+-- Notes are kept under about thirty characters on purpose: a longer note wraps
+-- to a second line in the Item column and doubles the row's height. Four items
+-- carry none at all, which is what a real catalogue looks like.
+INSERT INTO items (id, nama, satuan, cost, value, catatan) VALUES
+    (1,  'Tenda roder 10x20 m',      'unit',  3500000, 12000000, 'Termasuk plafon dan karpet.'),
+    (2,  'Tenda sarnafil 5x5 m',     'unit',  1200000,  4000000, 'Untuk booth dan registrasi.'),
+    (3,  'Sound system 10.000 watt', 'set',   8500000, 25000000, 'Termasuk operator.'),
+    (4,  'Mic wireless handheld',    'pcs',    150000,   500000, ''),
+    (5,  'AC standing 5 PK',         'unit',   750000,  2500000, 'Butuh daya tambahan.'),
+    (6,  'Par LED 54x3 watt',        'titik',   85000,   300000, ''),
+    (7,  'Moving head beam 230',     'titik',  350000,  1200000, 'Minimal enam titik.'),
+    (8,  'Coffee break 250 pax',     'pax',      35000,   95000, ''),
+    (9,  'Genset silent 100 kVA',    'unit',  2750000,  9000000, 'Bahan bakar delapan jam.'),
+    (10, 'Backdrop panggung 8x4 m',  'unit',  2400000,  7500000, '');
+
 -- Four events. Two already run, one a fortnight out, one still being quoted.
 INSERT INTO events (id, judul_acara, tanggal_acara, lokasi, created_at) VALUES
     (1, 'Gathering Tahunan Karyawan PT Cipta Karya Sentosa',
@@ -368,3 +389,30 @@ INSERT INTO rundown_item (rundown_id, urutan, kegiatan, durasi_menit, pic, catat
     (2, 5, 'Sesi tanya jawab media',             40, 'Ratna Dewi',     NULL),
     (2, 6, 'Coffee break dan networking',        60, 'Lina Marlina',   'Area lobi ballroom'),
     (2, 7, 'Sesi foto bersama dan penutupan',    90, 'Wulan Anggraini', 'Backdrop di panggung utama');
+
+-- Two sponsors on event 3, the product launch that is a fortnight out and the
+-- one still being quoted — so the package sits alongside a live rundown.
+--
+-- Sponsor 2 is deliberately over budget: 12% of 15.000.000 is 1.800.000, and
+-- its two lines cost 2.550.000, so the detail page opens on the warning state
+-- without anyone having to type a number to see it. Overspending is a decision
+-- staff are allowed to make, so it is flagged and never blocked.
+INSERT INTO sponsors (id, event_id, nama_pt, kontribusi, persen_budget, catatan, created_at) VALUES
+    (1, 3, 'PT Boga Rasa Nusantara',  50000000, 12,
+        'Kontrak sponsor utama, pembayaran dua termin.',
+        date('now', 'localtime', '-12 days') || ' 09:31:18'),
+    (2, 3, 'CV Mitra Segar Abadi',    15000000, 12,
+        'Sponsor pendukung, minta tambahan lighting di luar paket.',
+        date('now', 'localtime', '-9 days') || ' 14:05:52');
+
+-- cost and value are the catalog prices as they stood when each line was added,
+-- copied in rather than joined — the same snapshot the app writes. Editing an
+-- item in /items afterwards leaves these untouched, which is the whole point.
+INSERT INTO sponsor_item (sponsor_id, item_id, qty, cost, value, created_at) VALUES
+    -- 4.610.000 of a 6.000.000 budget: 1.390.000 still free.
+    (1, 1, 1, 3500000, 12000000, date('now', 'localtime', '-12 days') || ' 09:40:02'),
+    (1, 4, 4,  150000,   500000, date('now', 'localtime', '-12 days') || ' 09:41:37'),
+    (1, 6, 6,   85000,   300000, date('now', 'localtime', '-11 days') || ' 16:22:41'),
+    -- 2.550.000 against a 1.800.000 budget: 750.000 over.
+    (2, 5, 2,  750000,  2500000, date('now', 'localtime',  '-9 days') || ' 14:18:09'),
+    (2, 7, 3,  350000,  1200000, date('now', 'localtime',  '-8 days') || ' 11:07:33');

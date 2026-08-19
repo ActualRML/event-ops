@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Items — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h2>Items</h2>
+  <p class="chips">
+    <span class="chip"><span class="chip-angka">{{ jumlah_aktif }}</span> item{{ "s" if jumlah_aktif != 1 }}</span>
+    {% if arsip %}<span class="chip"><span class="chip-angka">{{ jumlah_arsip }}</span> archived</span>
+    {% else %}<span class="chip">archived hidden</span>{% endif %}
+  </p>
+</hgroup>
+
+{# The controls row, same shape as /vendors: the archive toggle quiet on the
+   left of the pair, the one primary action last. Being a direct child of main
+   is what pins both to the 34px form-control metrics. #}
+<div class="grid">
+  <div class="aksi-halaman">
+    <a href="{{ "/items" if arsip else "/items?arsip=1" }}" role="button"
+       class="secondary outline">{{ "Hide archived" if arsip else "Show archived" }}</a>
+    <a href="/items/new" role="button">New item</a>
+  </div>
+</div>
+
+<table class="tabel">
+  {# Six columns since the category went. Item takes 26%: enough for the notes
+     line, which is kept under about thirty characters, without leaving a gap
+     between a short item name and the Unit column. The 14% the category held is
+     spread over the three numeric columns instead. #}
+  <colgroup>
+    <col style="width: 26%">
+    <col style="width: 12%">
+    <col style="width: 16%">
+    <col style="width: 16%">
+    <col style="width: 13%">
+    <col style="width: 17%">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Unit</th>
+      <th class="angka">Cost</th>
+      <th class="angka">Value</th>
+      <th class="angka">Multiple</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for i in items %}
+    <tr {% if not i.aktif %}class="nonaktif"{% endif %}>
+      <td>
+        <strong>{{ i.nama }}</strong>
+        {# Notes as the row's secondary line, the same shape the rundown uses. #}
+        {% if i.catatan %}<div class="redup">{{ i.catatan }}</div>{% endif %}
+      </td>
+      <td class="redup">{{ i.satuan or "—" }}</td>
+      <td class="angka">{{ i.cost|rupiah }}</td>
+      <td class="angka">{{ i.value|rupiah }}</td>
+      {# Derived on the way out and never stored: cost and value both move, and
+         a stored ratio would be wrong the moment either one is edited. Cost
+         zero has no multiple to state — nothing divided by nothing. #}
+      <td class="angka">{% if i.cost %}{{ "%.1f"|format(i.value / i.cost) }}x{% else %}—{% endif %}</td>
+      {# One action per row. Archiving lives on the edit page: it is rare, and a
+         button for it in every row would outnumber its own use. #}
+      <td class="aksi">
+        <div class="aksi-grup">
+          <a href="/items/{{ i.id }}/edit" role="button"
+             class="secondary outline btn-mini">Edit</a>
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="kosong">
+        {% if arsip %}
+        Nothing in the catalog yet, archived or otherwise. Start with
+        “New item”.
+        {% else %}
+        No items to show. The catalog is the priced list of what an event is
+        made of — tents, lighting points, catering pax — each carrying what it
+        costs to buy and the rate a sponsor is charged for it. Start with
+        <a href="/items/new">New item</a>, or use “Show archived” if everything
+        here has been archived.
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

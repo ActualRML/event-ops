@@ -8,9 +8,9 @@ from datetime import date
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from core import renderer, tampilan
+from core import dokumen, renderer, tampilan
 from deps import templates
-from routes import rundown, send, spk, tracker, vendors
+from routes import items, rundown, send, spk, sponsors, tracker, vendors
 
 app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -30,12 +30,18 @@ templates.env.filters["duration"] = tampilan.format_durasi
 # audience the value is for without looking anything up.
 templates.env.filters["tanggal"] = renderer.format_tanggal
 templates.env.filters["durasi"] = renderer.format_durasi
+# Money, dot-grouped: Rp 3.000.000. The odd one out in the split above — the
+# thousands convention is a locale, not a language, so the catalog table and
+# the SPK print an amount identically and share dokumen's one formatter.
+templates.env.filters["rupiah"] = dokumen.format_rupiah
 # Footer year. Read at startup — a demo restarts far more often than a year turns.
 templates.env.globals["tahun"] = date.today().year
 
 # Include order reproduces the original registration order. No prefixes: the
 # routers carry their own full paths, so every URL resolves as it did before.
 app.include_router(vendors.router)
+app.include_router(items.router)
+app.include_router(sponsors.router)
 app.include_router(send.router)
 app.include_router(tracker.router)
 app.include_router(spk.router)
