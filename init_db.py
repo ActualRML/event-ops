@@ -1,7 +1,12 @@
-"""CLI: rebuild the database from scratch. python init_db.py"""
+"""CLI: rebuild the database from scratch. python init_db.py [--force]
 
+Refuses to run over an existing database. --force is the old unconditional
+behaviour, kept for a rebuild that is meant to throw the current one away."""
+
+import sqlite3
 import sys
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 
 import config
@@ -19,8 +24,69 @@ TABLES = ["categories", "vendors", "vendor_categories", "items", "events",
           "sponsors", "sponsor_item"]
 
 
-def main() -> int:
+def hitung_baris(db_path: Path):
+    """[(table, count)] for the tables the file actually has, or None when it
+    cannot be read at all.
+
+    Opened read-only, because this runs against a database the caller has not
+    yet agreed to lose: a plain connection would checkpoint the WAL back into
+    the main file on close. A table missing from an older database is skipped
+    rather than raised on — the job here is to report what is there, not to
+    validate the schema against today's schema.sql.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+
+    hasil = []
+    with closing(conn):
+        for table in TABLES:
+            try:
+                jumlah = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            except sqlite3.Error:
+                continue
+            hasil.append((table, jumlah))
+    return hasil
+
+
+def tolak(db_path: Path) -> int:
+    """The refusal: what is in the file, and how to keep it. Returns the exit
+    code so the caller reads as one line."""
+    cadangan = db_path.with_name(
+        f"{db_path.stem}-backup-{datetime.now():%Y%m%d-%H%M%S}{db_path.suffix}"
+    )
+
+    print(f"refusing: {db_path} already exists, and rebuilding deletes it.",
+          file=sys.stderr)
+
+    baris = hitung_baris(db_path)
+    if baris is None:
+        print("  it could not be opened to count rows — back it up anyway.",
+              file=sys.stderr)
+    else:
+        print("\n  rows that would be destroyed:", file=sys.stderr)
+        for table, jumlah in baris:
+            print(f"    {table:<18} {jumlah:>4}", file=sys.stderr)
+        print(f"    {'total':<18} {sum(j for _, j in baris):>4}", file=sys.stderr)
+
+    # VACUUM INTO, not a file copy: it writes one consistent database including
+    # pages still sitting in the -wal, which copying rfq.db alone would miss.
+    print("\n  back it up first:", file=sys.stderr)
+    print(f"    sqlite3 {db_path} \"VACUUM INTO '{cadangan}'\"", file=sys.stderr)
+    print(f"    or, without the sqlite3 CLI:  python -m sqlite3 {db_path}",
+          file=sys.stderr)
+    print("\n  then re-run, or pass --force to delete it now.", file=sys.stderr)
+    return 1
+
+
+def main(argv: list[str]) -> int:
     db_path = Path(config.DB_PATH)
+
+    # The whole guard. Everything below this line is what the script always
+    # did, and --force reaches it unchanged.
+    if db_path.exists() and "--force" not in argv:
+        return tolak(db_path)
 
     # WAL keeps sidecar files; a stale -wal would replay old pages into the
     # fresh database, so they go too.
@@ -45,4 +111,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
