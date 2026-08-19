@@ -53,7 +53,9 @@ Language — the split is by audience, not by file:
                      contoh (the "not a number" example, so the same parse
                      also serves a quantity field), capped at terbilang.MAKS
     tasks.py         SEND_TASKS, dispatch_batch, schedule_batch (phase B)
-    config.py        .env loading
+    config.py        .env loading, and ZONA — the one mapping of zone key to
+                     label and surcharge percentage, read by both the event
+                     form and the price maths
     db.py            all SQL
     init_db.py       schema/seed CLI
     cek_email.py     one-off send test CLI
@@ -76,10 +78,25 @@ Language — the split is by audience, not by file:
       rundown.py     /events/{event_id}/rundown and its items
     templates/  static/  email_templates/  db/  docs/  README.md
 
+db/migrations/ holds hand-applied SQL, numbered. There is no version table:
+nothing records that a migration ran, and re-running one fails on the
+duplicate column rather than half-applying. Every migration also has to be
+folded into db/schema.sql so a fresh build matches — add columns at the END
+of the table there, because ALTER TABLE ADD COLUMN can only append, and that
+keeps a migrated database diffable against a new one.
+
 Import direction is one-way. core/ may import config and other core
 modules, and nothing else from this project: never db, deps, tasks, or
 anything under routes/. Routers may import db, deps, tasks and core.
 Nothing imports main.
+
+config is importable from anywhere, routers included, and it is the one
+module with that freedom. It earns it by being a leaf: it imports os and
+dotenv and nothing from this project, so no import of it can ever close a
+cycle, and it sits below every layer rather than beside one. Test a new
+shared module against that before widening this list — a module that
+imports any project code is not a leaf, and putting it here would let two
+layers reach each other through it.
 
 Imports of core are absolute — `from core import renderer`, or
 `from core.terbilang import terbilang`. No relative imports.
@@ -202,7 +219,9 @@ items(id PK, nama TEXT NOT NULL COLLATE NOCASE UNIQUE, satuan DEFAULT '',
       value INTEGER NOT NULL CHECK(value >= 0),
       catatan DEFAULT '', aktif DEFAULT 1 CHECK(aktif IN (0,1)))
 
-events(id PK, judul_acara NOT NULL, tanggal_acara, lokasi, created_at)
+events(id PK, judul_acara NOT NULL, tanggal_acara, lokasi, created_at,
+       zona TEXT NOT NULL DEFAULT 'jabodetabek'
+            CHECK (zona IN ('jabodetabek','luar_jabodetabek','luar_jawa')))
 
 requests(id PK, event_id FK ON DELETE CASCADE, category_id FK,
          kebutuhan, deadline, pengirim_nama,
@@ -219,7 +238,8 @@ sponsor_item(id PK, sponsor_id FK ON DELETE CASCADE, item_id FK,
              qty INTEGER NOT NULL CHECK(qty > 0),
              cost INTEGER NOT NULL CHECK(cost >= 0),
              value INTEGER NOT NULL CHECK(value >= 0),
-             created_at, UNIQUE(sponsor_id, item_id))
+             created_at, zona_pct INTEGER NOT NULL DEFAULT 0,
+             UNIQUE(sponsor_id, item_id))
 
 rundown(id PK, event_id FK UNIQUE ON DELETE CASCADE, jam_mulai NOT NULL,
         batas_venue, created_at)
@@ -278,6 +298,13 @@ Rationale:
   re-downloadable with the same nomor. Storing it makes the number
   stable and gives procurement a record of what was issued.
 - sponsor_item.cost and .value are snapshots, not a join. See invariant 15.
+- sponsor_item.zona_pct is not data the app computes with — it is the
+  surcharge rate that produced the snapshot beside it, kept so a line
+  priced under an older zone stays visible as history rather than as an
+  error. See invariant 17.
+- events.zona is what the surcharge is computed from; events.lokasi stays
+  free text next to it, because lokasi is printed verbatim into RFQ emails
+  and the SPK and must not be reduced to three values.
 - requests.event_id is required, and so is db.create_request's event_id
   argument. It was optional, and None meant "mint an event from this
   brief" — reachable only while /send carried the event fields. See
@@ -346,6 +373,28 @@ the next rebuild from schema.sql.
     recomputed from jam_mulai, package prices are always frozen. A rundown
     describes what will happen and has to follow the plan; a package
     records what was promised and has to stay put.
+17. A price is decided once, at the moment the line is created, and every
+    input to that decision is frozen with it. The catalog base is one such
+    input; the event's zone surcharge is another. Both are resolved in the
+    same transaction that writes the row, and neither is consulted again.
+
+    Store the inputs, not just the result. sponsor_item.zona_pct records the
+    rate that produced cost and value — it is summed by nothing and read by
+    no total. It exists so that a line priced under one rate stays
+    *distinguishable* from one priced under another after the event moves.
+    Without it, correct history is indistinguishable from an arithmetic
+    error, and the honest answer looks like a bug.
+
+    A rate that no longer matches is REPORTED, never reconciled. The page
+    names the lines and says what changed; the fix is to remove the line and
+    add it again, which prices it afresh as a deliberate act. Nothing may
+    quietly bring an old line onto today's rate — that is invariant 15 with a
+    second input, and the test is the same: cost, value and zona_pct must not
+    appear in any SET list touching sponsor_item.
+
+    The rate itself lives in exactly one place (config.ZONA). Anything that
+    displays a percentage and anything that multiplies by one read from
+    there, so a rate cannot be changed for the maths and missed on the form.
 16. judul_acara, tanggal_acara and lokasi live in events and nowhere else.
     Every other table reaches them by joining on event_id — requests,
     outbox, spk and rundown all carry the id and none of them carries a
