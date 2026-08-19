@@ -53,12 +53,10 @@
    and requests.subject_template/body_template still records what was sent.
    This form only carries the brief and the vendor selection. #}
 <form id="form-preview" method="post" action="/send/preview">
-  {# Which event this batch attaches to. Empty means the brief below is
-     creating one. #}
+  {# Which event this batch attaches to. The title, date and location are not
+     carried back: they belong to the event row and are read from it again on
+     the next request, so they cannot be edited in flight. #}
   <input type="hidden" name="event_id" value="{{ event_id or '' }}">
-  <input type="hidden" name="judul_acara" value="{{ brief.judul_acara }}">
-  <input type="hidden" name="tanggal_acara" value="{{ brief.tanggal_acara }}">
-  <input type="hidden" name="lokasi" value="{{ brief.lokasi }}">
   <input type="hidden" name="kebutuhan" value="{{ brief.kebutuhan }}">
   <input type="hidden" name="deadline" value="{{ brief.deadline }}">
   <input type="hidden" name="pengirim_nama" value="{{ brief.pengirim_nama }}">

@@ -300,6 +300,24 @@ def get_event(event_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def update_event(event_id: int, judul_acara: str, tanggal_acara: str,
+                 lokasi: str) -> None:
+    """Overwrite one event's own fields.
+
+    Nothing else moves. Batches, outbox rows, SPK and the rundown all reference
+    the event by id, and every one of them reads the title, date and location
+    back through a join — so correcting a title here is a correction everywhere
+    it is displayed, and rewrites no other row."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            """UPDATE events
+                  SET judul_acara = ?, tanggal_acara = ?, lokasi = ?
+                WHERE id = ?""",
+            (judul_acara, tanggal_acara, lokasi, event_id),
+        )
+        conn.commit()
+
+
 # The one place event fields are grafted back onto a request row. Everything
 # that hands a row to core/ reads through this, so judul_acara, tanggal_acara
 # and lokasi arrive under exactly the names renderer and dokumen expect —
@@ -340,21 +358,19 @@ def konteks_vendor(vendor, kategori: str) -> dict:
 
 
 def create_request(brief: dict, subject_template: str, body_template: str,
-                   category_id: int, event_id: int | None = None,
+                   category_id: int, event_id: int,
                    conn: sqlite3.Connection | None = None) -> int:
-    """Insert one RFQ batch. Returns the new request id.
+    """Insert one RFQ batch against an event that already exists. Returns the
+    new request id.
 
-    event_id None means this brief is starting a new event, so the event row
-    is created from it first. Passing an existing event_id attaches the batch
-    to an event that already has one — a second quote round for the same day.
-    Both paths share the caller's transaction, so a half-written event can
-    never outlive a failed batch insert."""
+    event_id is required. It was optional, and None meant "create the event
+    from this brief" — a branch that existed only because /send used to carry
+    the event fields on its own form. Events are now created on /events, so the
+    only thing that branch could still do is mint an untitled orphan event from
+    a brief whose title happens to be blank. A function must admit exactly what
+    its callers can produce, the same rule a CHECK constraint follows.
+    Something that genuinely needs a new event calls create_event."""
     with transaksi(conn) as c:
-        if event_id is None:
-            event_id = create_event(
-                brief.get("judul_acara", ""), brief.get("tanggal_acara", ""),
-                brief.get("lokasi", ""), conn=c,
-            )
         cur = c.execute(
             """INSERT INTO requests (event_id, category_id, kebutuhan, deadline,
                                      pengirim_nama, subject_template, body_template)

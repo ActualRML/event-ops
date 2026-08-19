@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ judul }} — Vendor RFQ Blast{% endblock %}
+
+{# One template, both modes. `acara` is the row being edited, or undefined when
+   adding, and that single value decides the title and the post target — the
+   fields themselves are written once, so create and edit cannot drift apart. #}
+{% block content %}
+<hgroup class="judul-rapat">
+  <h2>{{ judul }}</h2>
+</hgroup>
+
+{% if errors %}
+<article>
+  <strong>Could not save the event.</strong> Check the fields flagged below.
+</article>
+{% endif %}
+
+<form method="post" action="{{ action }}" class="form-rapat form-vendor">
+  <label>
+    Event title
+    <input name="judul_acara" value="{{ v.judul_acara }}" autofocus
+           placeholder="e.g. Gathering Tahunan Karyawan"
+           {% if errors.judul_acara %}aria-invalid="true"{% endif %}>
+    {% if errors.judul_acara %}<small>{{ errors.judul_acara }}</small>{% endif %}
+  </label>
+
+  <div class="grid-isian">
+    <label>
+      Event date
+      <input type="date" name="tanggal_acara" value="{{ v.tanggal_acara }}"
+             {% if errors.tanggal_acara %}aria-invalid="true"{% endif %}>
+      {% if errors.tanggal_acara %}<small>{{ errors.tanggal_acara }}</small>
+      {% else %}<small class="redup">Optional. A batch deadline is checked
+        against it once it is set.</small>{% endif %}
+    </label>
+
+    <label>
+      Location
+      <input name="lokasi" value="{{ v.lokasi }}"
+             placeholder="e.g. Balai Kartini, Jakarta Selatan">
+    </label>
+  </div>
+
+  <div class="baris-aksi">
+    <button type="submit">Save</button>
+    <a href="/events" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+{% endblock %}

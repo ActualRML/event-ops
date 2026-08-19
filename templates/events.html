@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Events — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h2>Events</h2>
+  <p class="chips">
+    <span class="chip"><span class="chip-angka">{{ jumlah }}</span> event{{ "s" if jumlah != 1 }}</span>
+    <span class="chip">newest first</span>
+  </p>
+</hgroup>
+
+{# Controls row, same shape as /items and /sponsors: one primary action, and
+   being a direct child of main is what pins it to the 34px form metrics. #}
+<div class="grid">
+  <div class="aksi-halaman">
+    <a href="/events/new" role="button">New event</a>
+  </div>
+</div>
+
+<table class="tabel">
+  {# Location takes the width because it is the only column that runs long —
+     a venue name carries a hall, a street and a city. #}
+  <colgroup>
+    <col style="width: 28%">
+    <col style="width: 16%">
+    <col style="width: 28%">
+    <col style="width: 11%">
+    <col style="width: 17%">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>Event</th>
+      <th>Date</th>
+      <th>Location</th>
+      <th class="angka">Batches</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr>
+      <td><strong>{{ e.judul_acara }}</strong></td>
+      <td>{{ e.tanggal_acara | date or "—" }}</td>
+      <td class="redup">{{ e.lokasi or "—" }}</td>
+      {# Counted in SQL by list_events. A batch is an RFQ round against this
+         event, so zero means it has been booked but not yet quoted. #}
+      <td class="angka">{{ e.batches }}</td>
+      <td class="aksi">
+        <div class="aksi-grup">
+          <a href="/events/{{ e.id }}/edit" role="button"
+             class="secondary outline btn-mini">Edit</a>
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="5" class="kosong">
+        No events yet. An event is the day everything else hangs off — RFQ
+        batches, sponsors and the rundown all point at one. Start with
+        <a href="/events/new">New event</a>.
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

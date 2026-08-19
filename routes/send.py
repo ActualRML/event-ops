@@ -34,11 +34,10 @@ def parse_tanggal(teks: str):
 def pilih_event(event_id_raw: str, brief: dict):
     """Resolve the event selector into (event_id, event row, brief).
 
-    Empty means a new event, and the brief keeps the title, date and location
-    that were typed. Choosing an existing event overrides those three from its
-    own row — the event owns them now, so a second batch cannot quietly fork a
-    different title for the same day. An id that no longer exists falls back to
-    the new-event path, where validation asks for a title."""
+    The event owns judul_acara, tanggal_acara and lokasi: they are copied onto
+    the brief here and are not fields of this form at all, so a second batch
+    cannot fork a different title for the same day. Blank or an id that no
+    longer exists leaves them empty, and validation asks for an event."""
     ids = parse_ids([event_id_raw])
     acara = db.get_event(ids[0]) if ids else None
     if acara is None:
@@ -66,17 +65,18 @@ def pilih_kategori(category_id_raw: str):
 
 
 def validasi_brief(brief: dict, vendor_ids: list[int],
-                   event_baru: bool = True,
+                   event_id: int | None = None,
                    kategori_id: int | None = None) -> dict:
     """Runs before rendering. Returns {field: message}.
 
-    event_baru False means an existing event was chosen, so the event fields
-    came from the database rather than the form and are not the user's to
-    fill in on this page."""
+    The event is now a required choice rather than something this page can
+    create, so an unresolved selector is an error here instead of a title to
+    ask for. Its date is not format-checked: it came out of the events table,
+    which is the only thing that writes it."""
     errors = {}
 
-    if event_baru and not brief["judul_acara"].strip():
-        errors["judul_acara"] = "Event title is required."
+    if event_id is None:
+        errors["event_id"] = "Choose an event."
     if kategori_id is None:
         errors["kategori"] = "Pick the category this batch is for."
     if not brief["kebutuhan"].strip():
@@ -87,8 +87,6 @@ def validasi_brief(brief: dict, vendor_ids: list[int],
     tanggal_acara = parse_tanggal(brief["tanggal_acara"])
     deadline = parse_tanggal(brief["deadline"])
 
-    if brief["tanggal_acara"].strip() and tanggal_acara is None:
-        errors["tanggal_acara"] = "Invalid date format."
     if brief["deadline"].strip() and deadline is None:
         errors["deadline"] = "Invalid date format."
 
@@ -99,6 +97,16 @@ def validasi_brief(brief: dict, vendor_ids: list[int],
             errors["deadline"] = "Deadline must be on or before the event date."
 
     return errors
+
+
+def brief_dari_form(kebutuhan: str, deadline: str, pengirim_nama: str) -> dict:
+    """The three fields this page still owns. judul_acara, tanggal_acara and
+    lokasi are filled in afterwards by pilih_event, from the event row."""
+    brief = dict(BRIEF_KOSONG)
+    brief["kebutuhan"] = kebutuhan
+    brief["deadline"] = deadline
+    brief["pengirim_nama"] = pengirim_nama
+    return brief
 
 
 def send_context(request: Request, brief: dict, selected_ids: list[int],
@@ -143,9 +151,6 @@ async def send_form(request: Request):
 async def send_back(
     request: Request,
     event_id: str = Form(""),
-    judul_acara: str = Form(""),
-    tanggal_acara: str = Form(""),
-    lokasi: str = Form(""),
     kebutuhan: str = Form(""),
     deadline: str = Form(""),
     pengirim_nama: str = Form(""),
@@ -157,11 +162,7 @@ async def send_back(
     """Back from preview. Same rebuild path the validation bounce uses, minus
     the errors, so the brief and the vendor selection both come back. The edited
     templates ride along too, so a detour to add a vendor does not undo them."""
-    brief = {
-        "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
-        "lokasi": lokasi, "kebutuhan": kebutuhan,
-        "deadline": deadline, "pengirim_nama": pengirim_nama,
-    }
+    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama)
     acara_id, acara, brief = pilih_event(event_id, brief)
     kategori_id, kategori_row = pilih_kategori(category_id)
     brief["kategori"] = kategori_row["nama"] if kategori_row else ""
@@ -183,9 +184,6 @@ async def send_back(
 async def send_preview(
     request: Request,
     event_id: str = Form(""),
-    judul_acara: str = Form(""),
-    tanggal_acara: str = Form(""),
-    lokasi: str = Form(""),
     kebutuhan: str = Form(""),
     deadline: str = Form(""),
     pengirim_nama: str = Form(""),
@@ -194,11 +192,7 @@ async def send_preview(
     subject_template: str = Form(""),
     body_template: str = Form(""),
 ):
-    brief = {
-        "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
-        "lokasi": lokasi, "kebutuhan": kebutuhan,
-        "deadline": deadline, "pengirim_nama": pengirim_nama,
-    }
+    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama)
     acara_id, acara, brief = pilih_event(event_id, brief)
     kategori_id, kategori_row = pilih_kategori(category_id)
     brief["kategori"] = kategori_row["nama"] if kategori_row else ""
@@ -211,7 +205,7 @@ async def send_preview(
     if not vendors:
         ids = []
 
-    errors = validasi_brief(brief, ids, event_baru=acara_id is None,
+    errors = validasi_brief(brief, ids, event_id=acara_id,
                              kategori_id=kategori_id)
     if errors:
         return templates.TemplateResponse(
@@ -284,9 +278,6 @@ async def send_vendors(
 async def send_dispatch(
     request: Request,
     event_id: str = Form(""),
-    judul_acara: str = Form(""),
-    tanggal_acara: str = Form(""),
-    lokasi: str = Form(""),
     kebutuhan: str = Form(""),
     deadline: str = Form(""),
     pengirim_nama: str = Form(""),
@@ -297,11 +288,7 @@ async def send_dispatch(
     request_id: str = Form(""),
 ):
     """Phase A: one fast transaction, then hand off to the background."""
-    brief = {
-        "judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
-        "lokasi": lokasi, "kebutuhan": kebutuhan,
-        "deadline": deadline, "pengirim_nama": pengirim_nama,
-    }
+    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama)
     acara_id, acara, brief = pilih_event(event_id, brief)
     kategori_id, kategori_row = pilih_kategori(category_id)
     brief["kategori"] = kategori_row["nama"] if kategori_row else ""
@@ -322,7 +309,7 @@ async def send_dispatch(
         tasks.schedule_batch(existing)
         return RedirectResponse(f"/tracker/{existing}", status_code=303)
 
-    errors = validasi_brief(brief, ids, event_baru=acara_id is None,
+    errors = validasi_brief(brief, ids, event_id=acara_id,
                              kategori_id=kategori_id)
     if errors:
         return templates.TemplateResponse(

@@ -21,13 +21,15 @@
   <section>
     <h3>Event</h3>
 
-    {# One event can be quoted in several rounds, so the first question is
-       whether this batch belongs to an event that already exists. Empty value
-       means a new one, and the fields below it appear. #}
+    {# One event can be quoted in several rounds, so this batch always attaches
+       to an event that already exists. Creating one is its own page: the event
+       owns judul_acara, tanggal_acara and lokasi, and typing them here as well
+       is what let two batches fork a different title for the same day. #}
     <label>
       Choose event
-      <select id="pilih-event" name="event_id" onchange="ubahEvent()">
-        <option value="">New event</option>
+      <select id="pilih-event" name="event_id" onchange="ubahEvent()"
+              {% if errors.event_id %}aria-invalid="true"{% endif %}>
+        <option value="">Choose an event</option>
         {% for e in events %}
         {# The details ride on the option so switching events fills the block
            below without a round trip. The server still owns the values that
@@ -40,36 +42,21 @@
         </option>
         {% endfor %}
       </select>
+      {# Not a dead end: the link navigates away to the events page and the
+         batch is started again afterwards. Deliberately not a modal — the
+         event is a record in its own right, not a field of this form. #}
+      {% if errors.event_id %}<small>{{ errors.event_id }}</small>
+      {% else %}<small class="redup">Not listed?
+        <a href="/events/new">Add an event</a> first.</small>{% endif %}
     </label>
 
-    {# Shown for an existing event: the same read-only surface the SPK form
+    {# Shown once an event is picked: the same read-only surface the SPK form
        uses for values that are displayed, not asked for. #}
     <dl class="konteks" id="event-tersimpan" {% if not acara %}hidden{% endif %}>
       <div><dt>Event</dt><dd id="ev-judul">{{ acara.judul_acara if acara else "" }}</dd></div>
       <div><dt>Event date</dt><dd id="ev-tanggal">{{ (acara.tanggal_acara | date) if acara and acara.tanggal_acara else "—" }}</dd></div>
       <div><dt>Location</dt><dd id="ev-lokasi">{{ (acara.lokasi or "—") if acara else "" }}</dd></div>
     </dl>
-
-    <div id="event-baru" class="blok-event" {% if acara %}hidden{% endif %}>
-      <label>
-        Event title
-        <input name="judul_acara" value="{{ brief.judul_acara }}"
-               {% if errors.judul_acara %}aria-invalid="true"{% endif %}>
-        {% if errors.judul_acara %}<small>{{ errors.judul_acara }}</small>{% endif %}
-      </label>
-
-      <label>
-        Event date
-        <input type="date" name="tanggal_acara" value="{{ brief.tanggal_acara }}"
-               {% if errors.tanggal_acara %}aria-invalid="true"{% endif %}>
-        {% if errors.tanggal_acara %}<small>{{ errors.tanggal_acara }}</small>{% endif %}
-      </label>
-
-      <label>
-        Location
-        <input name="lokasi" value="{{ brief.lokasi }}">
-      </label>
-    </div>
   </section>
 
   <section>
@@ -164,14 +151,14 @@
 </form>
 
 <script>
-  // Which half of the event step is showing. The server decides it on load and
-  // on every bounce; this only handles the change in the browser.
+  // Fills the read-only block from the option's own data attributes, so
+  // picking an event shows its date and location without a round trip. The
+  // server renders the same block on load and on every validation bounce.
   function ubahEvent() {
     const select = document.getElementById('pilih-event');
     const opsi = select.selectedOptions[0];
     const dipilih = select.value !== '';
 
-    document.getElementById('event-baru').hidden = dipilih;
     document.getElementById('event-tersimpan').hidden = !dipilih;
 
     if (dipilih) {

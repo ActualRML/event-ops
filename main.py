@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core import dokumen, renderer, tampilan
 from deps import templates
-from routes import items, rundown, send, spk, sponsors, tracker, vendors
+from routes import events, items, rundown, send, spk, sponsors, tracker, vendors
 
 app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -42,6 +42,9 @@ templates.env.globals["tahun"] = date.today().year
 app.include_router(vendors.router)
 app.include_router(items.router)
 app.include_router(sponsors.router)
+# /events and its two subpaths. rundown keeps /events/{id}/rundown — the paths
+# do not overlap, so include order between the two does not matter.
+app.include_router(events.router)
 app.include_router(send.router)
 app.include_router(tracker.router)
 app.include_router(spk.router)
