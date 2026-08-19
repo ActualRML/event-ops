@@ -32,18 +32,25 @@
         class="form-rapat form-vendor">
     {# Item only. The line lands at qty 1 and is adjusted in the table above,
        which is also the answer for an item already in the package — the row
-       there increments rather than a second one appearing. #}
-    <label>
-      Item
-      <select name="item_id" {% if errors.item_id %}aria-invalid="true"{% endif %}>
-        <option value="">Choose an item</option>
-        {% for i in pilihan %}
-        <option value="{{ i.id }}" {% if v is defined and v.item_id == i.id|string %}selected{% endif %}>{{ i.nama }}{% if i.satuan %} ({{ i.satuan }}){% endif %}</option>
-        {% endfor %}
-      </select>
-      {% if errors.item_id %}<small>{{ errors.item_id }}</small>
-      {% else %}<small class="redup">Active catalog items not already on this package.</small>{% endif %}
-    </label>
+       there increments rather than a second one appearing.
+
+       Still in .grid-isian even though it is now a single field: the grid is
+       what keeps the select to half the panel. Left bare it stretched the
+       full 1150px, which is a lot of furniture for one dropdown. This is the
+       odd-count case the grid already handles — last cell simply empty. #}
+    <div class="grid-isian">
+      <label>
+        Item
+        <select name="item_id" {% if errors.item_id %}aria-invalid="true"{% endif %}>
+          <option value="">Choose an item</option>
+          {% for i in pilihan %}
+          <option value="{{ i.id }}" {% if v is defined and v.item_id == i.id|string %}selected{% endif %}>{{ i.nama }}{% if i.satuan %} ({{ i.satuan }}){% endif %}</option>
+          {% endfor %}
+        </select>
+        {% if errors.item_id %}<small>{{ errors.item_id }}</small>
+        {% else %}<small class="redup">Active catalog items not already on this package.</small>{% endif %}
+      </label>
+    </div>
 
     <div class="baris-aksi">
       <button type="submit">Add line</button>

@@ -333,15 +333,33 @@
        pair of buttons has to leave the typed box room to hold four digits. */
     .kendali-qty { display: flex; align-items: center; justify-content: flex-end;
                    gap: 4px; margin: 0; }
-    .btn-qty { width: 24px; height: 24px; flex: 0 0 auto;
-               padding: 0; font-size: 14px; line-height: 1;
-               display: inline-flex; align-items: center; justify-content: center; }
-    /* Beats .form-rapat's 34px, which this input would otherwise inherit on
-       any page carrying that class, and Pico's full-width default. */
-    .kotak-qty { width: 46px; flex: 0 0 auto; height: 24px;
-                 padding: 2px 4px; margin: 0;
-                 font-size: 13px; line-height: 1.4; text-align: center;
-                 font-variant-numeric: tabular-nums; }
+    /* margin: 0 is the load-bearing half. Pico gives every button a 20px
+       bottom margin, and align-items centres the MARGIN box — so the pair sat
+       10px above the input they belong beside, which is what read as "not
+       centred". .kendali-qty .btn-qty, so the reset cannot lose to it. */
+    .kendali-qty .btn-qty {
+      width: 24px; height: 24px; flex: 0 0 auto;
+      margin: 0; padding: 0; font-size: 14px; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    /* `input.kotak-qty`, not the class on its own. Pico sizes text inputs
+       through three rules that all look like
+         input:not([type=checkbox],[type=radio],[type=range])
+       and a :not() taking a LIST is the specificity of its most specific
+       argument, not the sum — so those are (0,1,1), and a lone class at
+       (0,1,0) loses to them by one element name. Left bare, this box rendered
+       114x62.5 with Pico's 15px/20px padding instead of 40x24. Naming the
+       element and the parent puts it at (0,2,1) and settles it without
+       leaning on source order. Same trap the drawer summary documents, one
+       notch smaller.
+       line-height 22px, not a ratio: 24px box less 2px of border is the
+       content height, so the digits sit centred without vertical padding. */
+    .kendali-qty input.kotak-qty {
+      width: 40px; height: 24px; flex: 0 0 auto;
+      padding: 0 2px; margin: 0;
+      font-size: 13px; line-height: 22px; text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
     @media (max-width: 900px) {
       .ringkas-paket { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }

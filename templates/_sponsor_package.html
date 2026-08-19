@@ -7,16 +7,16 @@
 
 <table class="tabel tabel-paket" id="tabel-paket">
   <colgroup>
-    {# Qty went from 8% to 12% when the cell gained its stepper: two 24px
-       buttons, a 46px box and the gaps measure ~124px with cell padding, and
-       12% of the panel is ~138px. The 4% comes off the two unit-price
-       columns, which are the narrowest text in the row. #}
-    <col style="width: 26%">
-    <col style="width: 12%">
+    {# Qty holds the stepper: 24 + 4 + 40 + 4 + 24 = 96px of controls, plus
+       24px of cell padding, against 11% of the panel at ~127px.
+       Line value takes 15% because "Rp 12.000.000" is the longest amount the
+       table renders and it wrapped at 13%. #}
+    <col style="width: 24%">
+    <col style="width: 11%">
     <col style="width: 13%">
     <col style="width: 13%">
-    <col style="width: 13%">
-    <col style="width: 13%">
+    <col style="width: 14%">
+    <col style="width: 15%">
     <col style="width: 10%">
   </colgroup>
   <thead>
