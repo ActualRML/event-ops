@@ -69,6 +69,7 @@ Language — the split is by audience, not by file:
       vendors.py     /, /vendors, /categories
       items.py       /items and its subpaths
       sponsors.py    /sponsors and its subpaths
+      events.py      /events, /events/new, /events/{id}/edit — no detail page
       send.py        /send and its subpaths
       tracker.py     /tracker, detail, retry
       spk.py         /tracker/{request_id}/spk/{vendor_id} and download
@@ -91,9 +92,10 @@ __file__, and therefore climbs one level out of the package.
 Template filenames are English, and the shape says what the page is:
 
     {plural}.html            a list page      vendors.html, items.html,
-                                              sponsors.html, tracker.html
+                                              sponsors.html, events.html,
+                                              tracker.html
     {singular}_form.html     a record form    vendor_form.html, item_form.html,
-                                              sponsor_form.html,
+                                              sponsor_form.html, event_form.html,
                                               category_form.html, spk_form.html
     {singular}_detail.html   one record       tracker_detail.html,
                                               sponsor_detail.html
@@ -163,13 +165,18 @@ it is also called by cek_email.py. The send_* rename covered the page's
 handlers, templates and context builder only; kirim_email keeps its name.
 
 ## Flow
-brief → select category + check vendors (one category per batch) →
+pick event + category → check vendors (one category per batch) →
 preview → send (batched, with progress) → tracker
 
+The event is picked, never typed: /send offers a select over what exists
+and links out to /events/new. See invariant 16.
+
 Top-level pages, each with a drawer entry: Send (/send), Tracker
-(/tracker), Vendors (/vendors), Items (/items), Sponsors (/sponsors).
-Rundown and SPK have no drawer entry — both are per-event or per-batch
-with no top-level list, and are reached from Tracker.
+(/tracker), Vendors (/vendors), Items (/items), Sponsors (/sponsors),
+Events (/events). Rundown and SPK have no entry of their own — both are
+per-event or per-batch with no top-level list, and are reached from
+Tracker. The rundown does light Events in the trigger, since it lives
+under /events/{id}; that is the same parent-lighting `/categories` gets.
 
 ## Schema
 
@@ -262,6 +269,10 @@ Rationale:
   re-downloadable with the same nomor. Storing it makes the number
   stable and gives procurement a record of what was issued.
 - sponsor_item.cost and .value are snapshots, not a join. See invariant 15.
+- requests.event_id is required, and so is db.create_request's event_id
+  argument. It was optional, and None meant "mint an event from this
+  brief" — reachable only while /send carried the event fields. See
+  invariant 16.
 - sponsor_item.item_id has no ON DELETE, so SQLite refuses to delete a
   catalog item that any package uses. Items are archive-only, so the app
   never reaches it; it will stop a hand-written DELETE.
@@ -316,6 +327,19 @@ the next rebuild from schema.sql.
     promised and has to stay put. Changing a quantity therefore means
     removing the line and adding it again, which re-snapshots at today's
     price — deliberately, so a reprice is always a visible act.
+16. judul_acara, tanggal_acara and lokasi live in events and nowhere else.
+    Every other table reaches them by joining on event_id — requests,
+    outbox, spk and rundown all carry the id and none of them carries a
+    copy. So editing an event on /events is a correction everywhere it is
+    displayed, and rewrites no other row. Nothing outside routes/events.py
+    writes those three columns, and no form outside /events offers them.
+
+    This is the opposite call from outbox.email_tujuan, which is
+    denormalized on purpose, and the two differ by what the value is FOR.
+    The event is the thing being described, so a corrected title should
+    propagate to every batch that describes it. email_tujuan is a record
+    of where a message actually went, so it must not move when the vendor
+    row does. Ask which of the two a new column is before copying either.
 
 ## UI conventions
 
@@ -433,8 +457,8 @@ class of our own for active state.
     li[role=separator]  height 0, margin 6px 4px, border-top 1px #eef0f3
 
 Entries live in one `{% set %}` list in base.html, two groups: what you do
-(Send RFQ, Tracker), then what you maintain (Vendors, Items, Sponsors). The
-separator is the gap between the groups, not an entry. The trigger label
+(Send RFQ, Tracker), then what you maintain (Vendors, Items, Sponsors,
+Events). The separator is the gap between the groups, not an entry. The trigger label
 and the marked entry both derive from that list, so they cannot disagree.
 `/categories` has no entry and lights Vendors, since it is reached from
 there and returns there.
