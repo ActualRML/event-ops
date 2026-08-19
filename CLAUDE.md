@@ -101,17 +101,26 @@ Template filenames are English, and the shape says what the page is:
                                               sponsor_detail.html
     {singular}_print.html    a printable      sponsor_print.html
     _{name}.html             a partial        _vendor_table.html, _progress.html,
-                                              _vendor_stats.html, _send_pick_vendor.html
+                                              _vendor_stats.html, _send_pick_vendor.html,
+                                              _sponsor_package.html, _sponsor_summary.html
 
 send.html, preview.html, send_rejected.html and rundown.html predate the
 convention and are named for the step they are, not the shape — they stay.
 
-_vendor_stats.html is the /vendors context line, and it swaps out of band:
-routes/vendors.py sets `oob` on a real HTMX request, _vendor_table.html
-includes the partial only when that flag is set, and the partial then
-carries hx-swap-oob="true". On a full load the flag is false and
-vendors.html includes the same partial inside its <hgroup> instead — one
-piece of markup either way, so the counts cannot disagree with the rows.
+Out-of-band swaps follow one mechanism, and there is no second pattern:
+the route sets `oob` on a real HTMX request; the swap target includes the
+oob partial only when that flag is set; the partial itself carries
+hx-swap-oob="true" only then. On a full page load the flag is false, the
+target omits it, and the page includes the same partial in its own place
+instead — one piece of markup either way, so the two halves cannot
+disagree.
+
+Two pairs use it. /vendors swaps the table (_vendor_table.html) and sends
+the chips along (_vendor_stats.html), because the counts describe the rows.
+Sponsor detail swaps the package table (_sponsor_package.html) and sends
+the summary along (_sponsor_summary.html), because a quantity change moves
+the totals and can cross the budget in either direction. Anything the swap
+target does not contain but the change affects belongs in an oob partial.
 
 One form template serves both create and edit, with the mode decided by
 whether a record was passed in (item_form.html, sponsor_form.html read
@@ -318,15 +327,25 @@ the next rebuild from schema.sql.
     formatting and terbilang are presentation concerns.
 14. One SPK per (request_id, vendor_id). Re-issuing means editing the
     existing row, not creating a second.
-15. sponsor_item.cost and .value are snapshotted from the catalog when the
-    line is added and never joined live from items afterwards. Editing a
-    catalog price must not change a package already built. This is the
-    OPPOSITE of the rundown rule: rundown times are always recomputed from
-    jam_mulai, package prices are always frozen. A rundown describes what
-    will happen and has to follow the plan; a package records what was
-    promised and has to stay put. Changing a quantity therefore means
-    removing the line and adding it again, which re-snapshots at today's
-    price — deliberately, so a reprice is always a visible act.
+15. Money on a sold line never moves. sponsor_item.cost and .value are
+    copied from the catalog when the line is created and are never read
+    from items again — not to display it, not to edit it, not in any
+    operation the line later undergoes. Repricing the catalog must leave
+    every package already built exactly as it was.
+
+    The rule is about the two columns, not about any one operation, and
+    that is what makes it survive: the test for anything new touching
+    sponsor_item is whether cost or value appears in its SET list. They
+    must not. Quantity is adjusted in place today and the snapshot is
+    carried through untouched; when the mechanism changes again the test
+    is unchanged. A reprice reaches a package only by removing the line
+    and adding it back — a deliberate act, with a visible before and
+    after.
+
+    This is the OPPOSITE of the rundown rule: rundown times are always
+    recomputed from jam_mulai, package prices are always frozen. A rundown
+    describes what will happen and has to follow the plan; a package
+    records what was promised and has to stay put.
 16. judul_acara, tanggal_acara and lokasi live in events and nowhere else.
     Every other table reaches them by joining on event_id — requests,
     outbox, spk and rundown all carry the id and none of them carries a
@@ -601,25 +620,32 @@ flex slot, ellipsised — 32px tall, not 34px. **32px is for table rows
 only.** It never sits beside a form control; anything outside a row is
 34px.
 
+The quantity stepper on a sponsor package row is the one thing smaller
+than that, and the reason is that three controls share one cell:
+`.kendali-qty` is the flex row (right-aligned, 4px gap, no margin),
+`.btn-qty` the 24px square − and +, `.kotak-qty` the 46px typed box. All
+three are 24px tall. **In-row sizes are decided by what has to fit in the
+cell, not by a scale** — a lone action button is 32px, a cluster is
+smaller. Anything outside a row is still 34px.
+
+`.kotak-qty` sets its own height and width because it would otherwise
+inherit the 34px and full width `.form-rapat` gives a text input on any
+page carrying that class.
+
 Disabled: `opacity: .45; cursor: not-allowed; filter: grayscale(35%)`.
+`.btn-qty` uses it for real: the − is disabled at qty 1, and is never the
+control that removes a line.
 
 ### Tables
 
 One look everywhere via `.tabel`; `table-layout: fixed` with a per-table
 `<colgroup>` in percentages is how every column width is set — no
-`min-width`, no `<th>` sizing. Widths in use:
-
-- vendors: 24/14/20/13/11/18
-- items: 26/12/16/16/13/17 — Item 26% fits a note of about thirty
-  characters on one line; wider only opens a gap to Unit
-- sponsors: 26/15/14/14/15/16
-- sponsor detail: 26/8/14/14/14/14/10
-- sponsor print sheet: 40/14/23/23
-- tracker: 6/32/16/18/18/10
-- tracker detail: 19/11/17/11/13/13/16
-- preview: 34/40/26
-- rundown: 5/13/26/10/13/15/18 — the last two columns are a pair of
-  `.btn-mini` each, and 15/18 is what stops "Down" and "Remove" clipping
+`min-width`, no `<th>` sizing. The percentages must total 100, and they are
+sized to the widest thing the column actually holds: a column of controls
+is measured against the controls, a column of text against the longest
+value it renders. grep templates/ for `<colgroup` to read the current set —
+this file does not list them, because a list of nine tables is wrong the
+first time a column is added to any one of them.
 
 Cells `.35rem .6rem` (7px/12px), `vertical-align: middle`,
 `overflow-wrap: break-word`. First and last columns zero their outer
