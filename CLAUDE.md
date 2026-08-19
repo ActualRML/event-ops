@@ -12,9 +12,9 @@ quality. Optimize for something demonstrable, not something maintainable.
 - Python 3.12, FastAPI, Jinja2, HTMX
 - SQLite, raw SQL via sqlite3 stdlib. No ORM.
 - aiosmtplib, Gmail SMTP + app password
-- Pico.css v2 and HTMX 2.0.4, both via CDN. All custom CSS is one
-  <style> block in base.html — no .css files, no Tailwind, no React,
-  no build step.
+- Pico.css v2, HTMX 2.0.4 and the Inter webfont, all three via CDN, with
+  --pico-font-family repointed at Inter. All custom CSS is one <style>
+  block in base.html — no .css files, no Tailwind, no React, no build step.
 - CSS class names are Indonesian by convention (.baris-vendor,
   .metrik-kartu, .form-kirim). This is deliberate and uniform — do not
   rename them piecemeal.
@@ -48,7 +48,10 @@ Language — the split is by audience, not by file:
 ## Layout
 
     main.py          app object, Jinja filters, static mount, router includes
-    deps.py          templates + parse_ids — what more than one router needs
+    deps.py          templates, parse_ids, parse_harga — what more than one
+                     router needs. parse_harga takes label, allow_zero and
+                     contoh (the "not a number" example, so the same parse
+                     also serves a quantity field), capped at terbilang.MAKS
     tasks.py         SEND_TASKS, dispatch_batch, schedule_batch (phase B)
     config.py        .env loading
     db.py            all SQL
@@ -58,17 +61,19 @@ Language — the split is by audience, not by file:
       mailer.py      SMTP send, honours DRY_RUN
       renderer.py    email subject/body rendering (vendor-facing)
       tampilan.py    interface formatting + SMTP error labels (staff-facing)
-      dokumen.py     SPK .docx generation
+      dokumen.py     SPK .docx generation, format_rupiah
       terbilang.py   number to Indonesian words
       penomoran.py   nomor surat formatting and sequence
       rundown.py     schedule arithmetic, pure functions
     routes/          one APIRouter per area
       vendors.py     /, /vendors, /categories
+      items.py       /items and its subpaths
+      sponsors.py    /sponsors and its subpaths
       send.py        /send and its subpaths
       tracker.py     /tracker, detail, retry
-      spk.py         /tracker/{id}/spk/...
-      rundown.py     /tracker/{id}/rundown and its items
-    templates/  static/  email_templates/  db/
+      spk.py         /tracker/{request_id}/spk/{vendor_id} and download
+      rundown.py     /events/{event_id}/rundown and its items
+    templates/  static/  email_templates/  db/  docs/  README.md
 
 Import direction is one-way. core/ may import config and other core
 modules, and nothing else from this project: never db, deps, tasks, or
@@ -82,6 +87,33 @@ templates/, static/ and db/ are addressed CWD-relative, so the app is
 started from the project root and the uvicorn command is unchanged.
 core/renderer.py is the one exception: it resolves email_templates/ from
 __file__, and therefore climbs one level out of the package.
+
+Template filenames are English, and the shape says what the page is:
+
+    {plural}.html            a list page      vendors.html, items.html,
+                                              sponsors.html, tracker.html
+    {singular}_form.html     a record form    vendor_form.html, item_form.html,
+                                              sponsor_form.html,
+                                              category_form.html, spk_form.html
+    {singular}_detail.html   one record       tracker_detail.html,
+                                              sponsor_detail.html
+    {singular}_print.html    a printable      sponsor_print.html
+    _{name}.html             a partial        _vendor_table.html, _progress.html,
+                                              _vendor_stats.html, _send_pick_vendor.html
+
+send.html, preview.html, send_rejected.html and rundown.html predate the
+convention and are named for the step they are, not the shape — they stay.
+
+_vendor_stats.html is the /vendors context line, and it swaps out of band:
+routes/vendors.py sets `oob` on a real HTMX request, _vendor_table.html
+includes the partial only when that flag is set, and the partial then
+carries hx-swap-oob="true". On a full load the flag is false and
+vendors.html includes the same partial inside its <hgroup> instead — one
+piece of markup either way, so the counts cannot disagree with the rows.
+
+One form template serves both create and edit, with the mode decided by
+whether a record was passed in (item_form.html, sponsor_form.html read
+`item` / `sponsor`). Two templates for one form drift; one cannot.
 
 ## Presentation split
 
@@ -106,26 +138,38 @@ format the same values; they differ only in which audience reads the result.
   messages with no migration, and the full server response is still
   available in the cell's tooltip.
 
-Six Jinja filters, and which one you reach for is decided by audience,
-not by convenience:
+The Jinja filters, and which one you reach for is decided by audience, not
+by convenience:
 
 - staff-facing, from tampilan — `date`, `datetime`, `error_message`,
   `duration`. Everything the interface renders.
 - vendor-facing, from renderer — `tanggal`, `durasi`. The printed rundown
-  only; the email body calls renderer directly rather than through a
-  filter. Indonesian filter names on purpose: `| tanggal` sitting next to
-  `| date` in a template says which audience the value is for without
-  looking anything up.
+  and the printed sponsor sheet; the email body calls renderer directly
+  rather than through a filter. Indonesian filter names on purpose:
+  `| tanggal` sitting next to `| date` in a template says which audience
+  the value is for without looking anything up.
+- neither, from dokumen — `rupiah`. The odd one out: thousands grouped
+  with dots is a locale convention rather than a language, so the SPK, the
+  catalog table, the sponsor summary and the printed sheet all format an
+  amount the same way and share dokumen.format_rupiah.
+
+`rupiah` renders a negative as `Rp -750.000`, which reads as a broken
+amount rather than a negative one. The one place a negative can occur —
+Remaining on a sponsor — puts the sign outside the symbol in the template
+instead (`−Rp 750.000`, U+2212). Do that anywhere else a negative appears.
 
 mailer.kirim_email belongs to the mailer API, not the Send page family —
 it is also called by cek_email.py. The send_* rename covered the page's
 handlers, templates and context builder only; kirim_email keeps its name.
 
 ## Flow
-brief → select category + check vendors (cross-category) → preview →
-send (batched, with progress) → tracker
+brief → select category + check vendors (one category per batch) →
+preview → send (batched, with progress) → tracker
 
-Three pages: Vendors (CRUD, /vendors), Send (/send), Tracker (/tracker).
+Top-level pages, each with a drawer entry: Send (/send), Tracker
+(/tracker), Vendors (/vendors), Items (/items), Sponsors (/sponsors).
+Rundown and SPK have no drawer entry — both are per-event or per-batch
+with no top-level list, and are reached from Tracker.
 
 ## Schema
 
@@ -137,8 +181,36 @@ vendors(id PK, nama_pt, pic_nama, email, no_hp, area, catatan,
 vendor_categories(vendor_id FK, category_id FK,
                   PRIMARY KEY(vendor_id, category_id))
 
-requests(id PK, judul_acara, tanggal_acara, lokasi, kebutuhan, deadline,
-         pengirim_nama, subject_template, body_template, created_at)
+items(id PK, nama TEXT NOT NULL COLLATE NOCASE UNIQUE, satuan DEFAULT '',
+      cost INTEGER NOT NULL CHECK(cost >= 0),
+      value INTEGER NOT NULL CHECK(value >= 0),
+      catatan DEFAULT '', aktif DEFAULT 1 CHECK(aktif IN (0,1)))
+
+events(id PK, judul_acara NOT NULL, tanggal_acara, lokasi, created_at)
+
+requests(id PK, event_id FK ON DELETE CASCADE, category_id FK,
+         kebutuhan, deadline, pengirim_nama,
+         subject_template NOT NULL, body_template NOT NULL, created_at)
+
+sponsors(id PK, event_id FK ON DELETE CASCADE,
+         nama_pt TEXT NOT NULL COLLATE NOCASE,
+         kontribusi INTEGER NOT NULL CHECK(kontribusi > 0),
+         persen_budget INTEGER NOT NULL DEFAULT 12
+                       CHECK(persen_budget BETWEEN 1 AND 100),
+         catatan DEFAULT '', created_at, UNIQUE(event_id, nama_pt))
+
+sponsor_item(id PK, sponsor_id FK ON DELETE CASCADE, item_id FK,
+             qty INTEGER NOT NULL CHECK(qty > 0),
+             cost INTEGER NOT NULL CHECK(cost >= 0),
+             value INTEGER NOT NULL CHECK(value >= 0),
+             created_at, UNIQUE(sponsor_id, item_id))
+
+rundown(id PK, event_id FK UNIQUE ON DELETE CASCADE, jam_mulai NOT NULL,
+        batas_venue, created_at)
+
+rundown_item(id PK, rundown_id FK ON DELETE CASCADE, urutan NOT NULL,
+             kegiatan NOT NULL, durasi_menit CHECK(durasi_menit > 0),
+             pic, catatan, UNIQUE(rundown_id, urutan))
 
 outbox(id PK, request_id FK, vendor_id FK, email_tujuan, subject,
        status CHECK(status IN ('draft','sent','failed','replied')),
@@ -158,8 +230,25 @@ vendor with no category still appears with kategori NULL. Load-bearing:
 the vendor list, the send-page picker and the outbox/tracker queries all
 read the view rather than re-joining vendor_categories.
 
-Indexes: idx_vendor_categories_category, idx_outbox_request,
-idx_outbox_status, idx_vendors_aktif, idx_spk_request.
+Indexes: idx_vendor_categories_category, idx_requests_event,
+idx_outbox_request, idx_outbox_status, idx_vendors_aktif, idx_spk_request,
+idx_sponsors_event, idx_sponsor_item_sponsor.
+
+### Domain boundary — categories and items are not linked
+
+`categories` is the **vendor side**: the trades we buy in and ask for
+quotes on. A category exists so a vendor can be found and an RFQ batch can
+be addressed at one trade.
+
+`items` is the **sponsor side**: the things we own and sell on, each with a
+cost we pay and a value a sponsor is charged.
+
+They are different domains and there is no key between them. `items`
+carried a `category_id` into `categories` for one revision; it read as if a
+thing we sell and a thing we buy were the same kind of object, and it was
+removed. Do not add it back, and do not add an items-only category table
+either — a catalog this size does not need grouping. Revisit past roughly
+thirty rows.
 
 Rationale:
 - vendor↔category is many-to-many; tent vendors commonly also supply
@@ -172,16 +261,27 @@ Rationale:
 - spk is stored rather than generated on demand: the SPK must be
   re-downloadable with the same nomor. Storing it makes the number
   stable and gives procurement a record of what was issued.
+- sponsor_item.cost and .value are snapshots, not a join. See invariant 15.
+- sponsor_item.item_id has no ON DELETE, so SQLite refuses to delete a
+  catalog item that any package uses. Items are archive-only, so the app
+  never reaches it; it will stop a hand-written DELETE.
 
-harga was CHECK(harga >= 0) DEFAULT 0, which admitted a zero-value SPK
-the validator in main.parse_harga already rejected. The constraint now
-matches the validator. SQLite cannot alter a CHECK in place, so the live
-db/rfq.db still carries the old one — it picks the new constraint up on
-the next rebuild from schema.sql. No existing row violates it.
+A CHECK constraint must admit exactly what the validator admits. harga was
+CHECK(harga >= 0) DEFAULT 0 while deps.parse_harga already rejected zero,
+so a zero-value SPK was reachable through SQL but not through the form;
+harga is now CHECK(harga > 0). items.cost/value, sponsors.kontribusi,
+sponsors.persen_budget and sponsor_item.qty were all written to match their
+validators from the start, for the same reason.
+
+SQLite cannot alter a CHECK in place, so a live db/rfq.db built before a
+constraint changed still carries the old one and picks the new one up on
+the next rebuild from schema.sql.
 
 ## Invariants
 
-1. PRAGMA foreign_keys = ON on EVERY new connection, not once at init.
+1. PRAGMA foreign_keys = ON and journal_mode = WAL on EVERY new connection,
+    not once at init; init_db.py deletes the -wal/-shm sidecars on rebuild,
+    since a stale -wal replays old pages into the fresh db.
 2. DRY_RUN defaults True. When true, never open an SMTP connection —
    log to/subject/body only.
 3. The UI must expose no path that sends without passing through the
@@ -207,6 +307,15 @@ the next rebuild from schema.sql. No existing row violates it.
     formatting and terbilang are presentation concerns.
 14. One SPK per (request_id, vendor_id). Re-issuing means editing the
     existing row, not creating a second.
+15. sponsor_item.cost and .value are snapshotted from the catalog when the
+    line is added and never joined live from items afterwards. Editing a
+    catalog price must not change a package already built. This is the
+    OPPOSITE of the rundown rule: rundown times are always recomputed from
+    jam_mulai, package prices are always frozen. A rundown describes what
+    will happen and has to follow the plan; a package records what was
+    promised and has to stay put. Changing a quantity therefore means
+    removing the line and adding it again, which re-snapshots at today's
+    price — deliberately, so a reprice is always a visible act.
 
 ## UI conventions
 
@@ -223,26 +332,15 @@ a moving target: 16px base, stepping up at 576/768/1024/1280/1536px, so
 at any desktop width from 1280px up **1rem = 20px**, not 16px. Mixing
 the two units is what produced every size mismatch the audit found.
 
-The root font size is deliberately **not** pinned. The current rendering
+The root font size is deliberately **not** pinned: the current rendering
 is approved, and overriding the root would resize every rem value still
-in the sheet at once — a full visual re-review for no gain. Existing rem
-values stay; new ones are not added.
+in the sheet at once — a full visual re-review for no gain. Those
+literals are legacy, not a documented set, so do not treat any list of
+them as complete — grep base.html for `rem` and multiply by 20.
 
-Still in rem, rendering at 1280px and up: tables (.9rem → 18px body,
-.72rem → 14.4px headers), badges (.75rem → 15px), chips (.8rem → 16px),
-nav links (.85rem → 17px), brand (.78rem → 15.6px), h2 (1.5rem → 30px),
-metric numbers (1.9rem → 38px), `.btn-mini` (.72rem → 14.4px), and the
-`.metrik` / `.aksi-grup` gaps.
-
-Everything else is px and fixed: every form control (34px tall, 14px
-text, 13px labels, 12px helper text), the /vendors controls row, section
-h3 (13px), `.status-batch` (14px), `.konteks` (11px/14px), `.pratinjau`
-(13px), vendor picker rows (14px), `#counter` (13px), footer (12px).
-
-Table body text still renders 18px against a 14px form control. That is
-the one remaining rem/px gap, left alone on purpose — closing it means
-restating the whole table scale in px, which is a visual change rather
-than a cleanup.
+Table body text still renders 18px against a 14px form control — the one
+remaining rem/px gap, left alone on purpose: closing it means restating
+the whole table scale in px, a visual change rather than a cleanup.
 
 ### Text colour
 
@@ -289,36 +387,100 @@ replied, `#78848f` draft/inactive.
 | | header `.bilah` | footer `.kaki` |
 |---|---|---|
 | height | 59px | 42px |
-| padding-block (inner) | 14px | 12px |
+| padding-block (inner) | 12px | 12px |
 | background | `#fff` | `#fff` |
 | border | bottom `1px #e7eaf0` (`--pico-muted-border-color`) | top `1px #eef0f3` |
-| text | brand 15.6px/600/uppercase/1.09px tracking, muted; nav links 17px/500 | 12px/1.4 muted |
+| text | brand 15.6px/600/uppercase/1.09px tracking, muted | 12px/1.4 muted |
+
+The header's 12px is arithmetic, not taste: the drawer trigger is a real
+34px control, and 12 + 34 + 12 + the 1px border is what holds the bar at
+59px. It was 14px while the nav was four inline links, whose padding did
+not affect the line box.
 
 The footer border is one step lighter than the header's on purpose — the
 header stays the heavier of the two. `.kaki` uses `margin-top: auto`
 against a flex-column body, so the slack lands on the grey page, not
 inside the panel.
 
-Nav links: muted, 8px/15px padding, radius 8px, hover fills
-`rgba(128,138,148,.14)`. Active page = weight 600, fill
-`rgba(128,138,148,.16)`, plus `inset 0 -2px 0` underline in the link
-colour.
+### Drawer menu
+
+The four visible nav links are gone. The header carries the brand and then
+one collapsed menu, and `.tautan-nav` no longer exists — do not resurrect
+it.
+
+Pico v2's native `<details class="dropdown">` supplies the whole
+interaction. **No script.** That includes outside-click dismissal: Pico
+draws `details.dropdown[open] > summary::before` as a fixed full-viewport
+backdrop at `z-index: 1`, so a click anywhere while open lands on the
+summary and closes it. The panel's own `z-index: 99` keeps its links
+clickable above that backdrop. Escape does **not** close it — native
+`<details>` has no Escape handling and Pico adds none.
+
+Trigger is `☰` plus the current page name (`.ikon-menu` 19px, then
+`.nama-halaman` 600 in `--teks-gelap`), falling back to `☰ Menu` on any
+page outside the list. That name is the whole "where am I" signal now, so
+the panel's current entry is marked with `aria-current="page"` and left to
+Pico, which fills it from `--pico-dropdown-hover-background-color`. No
+class of our own for active state.
+
+    .menu-ringkas    the <details>
+    .ikon-menu       the hamburger glyph, aria-hidden
+    .nama-halaman    the current page name in the trigger
+    summary          34px, 7px 14px, radius 8px, 17px/500, muted,
+                     hover fill rgba(128,138,148,.14), open fill .16
+    summary + ul      panel: absolute, top 100% + 6px, min-width 184px,
+                     6px padding, #fff on 1px #e4e7eb, radius 8px
+    li[role=separator]  height 0, margin 6px 4px, border-top 1px #eef0f3
+
+Entries live in one `{% set %}` list in base.html, two groups: what you do
+(Send RFQ, Tracker), then what you maintain (Vendors, Items, Sponsors). The
+separator is the gap between the groups, not an entry. The trigger label
+and the marked entry both derive from that list, so they cannot disagree.
+`/categories` has no entry and lights Vendors, since it is reached from
+there and returns there.
+
+**Everything the drawer computes lives inside a `{% with %}` that also
+wraps the header markup.** `path`, `kelompok` and `ns` are assignments, and
+a top-level `{% set %}` in a parent shadows a context key of the same name
+in every child template — silently. That cost one page a wrong count with
+no error to show for it. Any new top-level computation in base.html goes
+inside a scope.
+
+Overriding Pico here takes more specificity than it looks. Two of its rules
+style a dropdown summary as a select-shaped box:
+
+    details.dropdown > summary:not([role])          (0,2,2)
+    nav details.dropdown > summary:not([role])      (0,2,3)
+
+between them supplying a 1px `#cfd5e2` border, 5px radius, `#fbfcfd` fill
+and a 50px height. Carrying the same `:not([role])` puts our rules at
+(0,3,3), which clears both outright rather than leaning on source order.
+Pico also adds 7.5px above the first panel row and below the last through
+`li:first-of-type` (0,2,4), so those pseudo-classes are named in our rule
+too. Pico's stylesheet is cross-origin, so `document.styleSheets[…]
+.cssRules` throws and in-page rule enumeration silently shows only our
+own — read the CDN file directly when chasing an override.
 
 ### Page title block
 
 Two shapes, chosen by whether the page has a context line:
 
 - **With chips** — plain `<hgroup>`: h2 (30px/1.25, `-.02em`)
-  → 4px → `.chips` → **20px** to whatever follows. Used by /vendors,
-  /tracker, /tracker/{id}, and the SPK form when editing an existing SPK.
+  → 4px → `.chips` → **20px** to whatever follows. Every list page and
+  every record-detail page.
 - **Title only** — `<hgroup class="judul-rapat">`: h2 margin-bottom 0,
-  hgroup margin-bottom **16px**. Used by /vendors/new, /send, preview,
-  /categories/new, and the SPK form when issuing a new one.
+  hgroup margin-bottom **16px**. Every form page, and the Send flow.
 
 The 16px/20px split is a rule, not drift: it tracks whether the page has
 a context line. Chips carry their own visual mass, so the block below
 them needs the extra 4px to sit clear. Pick the shape by whether the
-page has chips, and the spacing follows.
+page has chips, and the spacing follows — do not list pages here, read the
+template.
+
+One page does not follow it. `spk_form.html` carries `.judul-rapat` in both
+states and adds its chips inside that hgroup when editing, so an SPK being
+edited shows a context line with 16px under it instead of 20px. Known, not
+yet fixed; fixing it is a visual change, so it needs its own pass.
 
 Chips are the only context-line form in use — no prose subtitles exist,
 though `main hgroup > p` is styled for one (.875rem muted). A chip is
@@ -352,10 +514,10 @@ it plus one of `.form-vendor` (record forms) or `.form-kirim` (Send).
 - Field row → next field row: **12px** on `.form-vendor` (`> label`,
   `> fieldset`, `> .grid-isian`), **16px** on `.form-kirim`
   (`section > label`, `section > .grid`).
-- Two-column grid: `.grid-isian` on the vendor form —
-  `1fr 1fr`, column-gap 20px, row-gap 12px, short fields two per row, an
-  odd count leaving the last cell empty. Send instead uses Pico's own
-  `.grid` for its one paired row (the two date fields, 20px gap).
+- Two-column grid: `.grid-isian` — short field pairs inside a form.
+  `1fr 1fr`, column-gap 20px, row-gap 12px, an odd count leaving the last
+  cell empty; grep templates/ for current users. Send instead uses Pico's
+  own `.grid` for its one paired row (the two date fields, 20px gap).
   Full-width fields (Notes, Requirements, Scope of work) sit outside the
   grid as direct children.
 - `.form-sempit` caps a form at 420px — /categories/new only.
@@ -377,34 +539,38 @@ page title. Its heading lands the same 16px below the title that
 Three levels, all 34px tall / 14px / 6px 14px padding / radius 5px when
 they sit in an action row:
 
-1. **Primary** — Pico default fill `#0172ad`, white text. One per page,
-   always last in the row. Save (vendor, category), Continue to preview,
-   Send now, Retry failed, Issue SPK / Update, Add Vendor.
+1. **Primary** — Pico default fill `#0172ad`, white text. The action the
+   row exists for, always last in it. One per action row, not one per
+   page — a page with two independent forms has two.
 2. **Secondary** — `class="secondary outline"`, transparent on `#5d6b89`
-   border and text. Cancel, Back, All requests, Add Category, and every
-   in-table action button.
+   border and text. Navigating away, cancelling, or one choice among
+   several — including every in-table action button.
 3. **Muted (`.btn-mati`)** — transparent on `--pico-muted-border-color`,
    muted text, turning `#b3261e` on hover/focus only. The destructive
-   in-table action: Deactivate/Activate in the vendor table, Remove in
-   the rundown table.
+   action wherever it sits, taking the metrics of the row it is in —
+   usually a table row, but not always.
 
-Row containers:
+Row containers — which pages use which drifts; grep templates/:
 
-- `.baris-aksi` — left-aligned, 8px gap, no top margin. Data-entry
-  forms: vendor form, category form, SPK form. Only here does the submit
-  get a fixed 110px width (`.form-vendor .baris-aksi button[type=submit]`).
-- `.baris-aksi-kanan` — right-aligned, 8px gap, margin-top 20px,
-  primary last. Send, preview, tracker detail.
-- `.aksi-halaman` — right-aligned, 8px gap, inside the controls row.
-  /vendors only. `main > .grid :is(select, input, button, [role=button])`
-  pins every control in that row to the same 34px/14px as a form control,
-  so the filter select, the search box and both page buttons match the
-  record forms. The explicit height is load-bearing: Pico gives input and
-  `[role=button]` a height derived from 1rem while select and button stay
-  content-sized, so the row stair-steps without it.
-- `.aksi-grup` — in-table pair, right-aligned, .25rem gap, children
-  `flex: 1 1 0; max-width: 6rem` so both measure equal down the column.
-  `.btn-spk` lifts the cap when it is alone in the cell.
+- `.baris-aksi` — left-aligned, 8px gap, no top margin of its own. The
+  action row belonging to a form. Only here does the submit get a fixed
+  110px width (`.form-vendor .baris-aksi button[type=submit]`).
+- `.baris-aksi-kanan` — right-aligned, 8px gap, margin-top 20px, primary
+  last. The action row belonging to a page.
+- `.aksi-halaman` — right-aligned, 8px gap, inside the controls row. Every
+  list page whose actions sit above the table. It must be a direct child
+  of `main > .grid`:
+  `main > .grid :is(select, input, button, [role=button])` pins every
+  control in that row to the same 34px/14px as a form control, so a filter
+  select, a search box and the page buttons all match the record forms. The
+  explicit height is load-bearing: Pico gives input and `[role=button]` a
+  height derived from 1rem while select and button stay content-sized, so
+  the row stair-steps without it.
+- `.aksi-grup` — in-table actions, right-aligned, .25rem gap, children
+  `flex: 1 1 0; max-width: 6rem` so a pair measures equal down the column.
+  A lone button fills to that 6rem cap rather than shrinking to its label —
+  that is the established look, and `.btn-spk` lifts the cap when it needs
+  the whole cell.
 
 `.btn-mini` (in-table): 14.4px, `.2rem/.25rem` padding, full-width in its
 flex slot, ellipsised — 32px tall, not 34px. **32px is for table rows
@@ -420,6 +586,11 @@ One look everywhere via `.tabel`; `table-layout: fixed` with a per-table
 `min-width`, no `<th>` sizing. Widths in use:
 
 - vendors: 24/14/20/13/11/18
+- items: 26/12/16/16/13/17 — Item 26% fits a note of about thirty
+  characters on one line; wider only opens a gap to Unit
+- sponsors: 26/15/14/14/15/16
+- sponsor detail: 26/8/14/14/14/14/10
+- sponsor print sheet: 40/14/23/23
 - tracker: 6/32/16/18/18/10
 - tracker detail: 19/11/17/11/13/13/16
 - preview: 34/40/26
@@ -443,18 +614,37 @@ ellipsised, one class per status keyed off the raw DB value:
 | class | colour | shown as |
 |---|---|---|
 | `.badge-aktif` / `.badge-sent` | `#2e7d32` | Active / Sent |
-| `.badge-nonaktif` / `.badge-draft` | `#78848f` | Inactive / Pending |
+| `.badge-nonaktif` / `.badge-draft` | `#78848f` | Inactive / N pending / Pending |
 | `.badge-gagal` / `.badge-failed` | `#b3261e` | N failed / Failed |
 | `.badge-replied` | `#1565c0` | Replied |
 
 Inactive rows get `opacity: .45` on the whole row.
+
+A `<tfoot>` is a totals row, not a data row: `border-top: 1px #e7eaf0`,
+`border-bottom: none`, weight 600, `padding-top: .5rem`. Used by the
+sponsor package table and the printed sheet. The totals are recomputed
+server-side on every change — nothing sums in the browser.
 
 Metric cards (tracker detail only): 3-up grid, 20px gap, 30px below,
 dropping to 2-up under 720px. Card is `1px --pico-muted-border-color`,
 radius **8px** — the same as `.konteks` and `.pratinjau`, all three
 being the same idea — `.9rem 1rem` padding, no fill. Number 38px/600,
 label 15px uppercase muted. Sent green `#2e7d32`, Failed red `#b3261e`,
-Total inherits.
+Total inherits. A bare Pico `<progress>` sits under the status line below
+them — the one unstyled Pico element in the app.
+
+`.ringkas-paket` (sponsor detail only) is the other read-only summary and
+deliberately not a metric card: four rupiah amounts and a multiple on one
+row, so 38px numbers would wrap every one. Five-column grid inside one box
+that shares the `.konteks` surface — `#fbfcfd` on `1px #e4e7eb`, radius
+8px, `12px 14px` padding, `10px 20px` gap — with `dt` 11px uppercase muted
+over `dd` 15px/500 in `--teks-gelap`. Drops to 3-up under 900px and 2-up
+under 620px. It is its own rule rather than a second class on `.konteks`,
+whose 3rd and 5th cells are pinned full-width.
+
+`.nilai-minus` is the app's failure red `#b3261e` on a number that has gone
+negative — Remaining on a sponsor is the only one today. It marks the
+value; the row is not otherwise styled, and nothing is disabled.
 
 ### Warnings and empty states
 
@@ -462,12 +652,17 @@ Total inherits.
   padding, 20px below, Pico's own large shadow. Bold lead sentence, then
   one plain line. Same shape on every form page.
 - **Serious, as opposed to routine** — `article.peringatan` adds
-  `border-left: 3px #b3261e`. Two uses, and they differ in whether they
-  block: on the SPK form the vendor or request is missing required data
-  and the submit is disabled alongside it; on the rundown the schedule
-  runs past the venue limit, which is a real schedule to be flagged, not
-  an error, so nothing is disabled. The red rule marks weight, not a
-  blocked state — read the surrounding controls for that.
+  `border-left: 3px #b3261e`. The uses differ in whether they block:
+  - SPK form — the vendor or request is missing required data, and the
+    submit is disabled alongside it.
+  - Rundown — the schedule runs past the venue limit. A real schedule to be
+    flagged, not an error, so nothing is disabled.
+  - Sponsor detail — the package is over budget. Staff may knowingly
+    overspend, so it reports the overspend and offers the two ways out;
+    nothing is disabled.
+
+  The red rule marks weight, not a blocked state — read the surrounding
+  controls for that.
 - **Empty table** — a single `<td class="kosong" colspan=…>`: muted,
   italic, `padding-block: 30px`. Every empty state is written as
   a sentence plus the next action ("Start with 'Add Vendor' — …"), and
@@ -475,9 +670,9 @@ Total inherits.
 - **Inline reassurance** — `p.redup` under the tracker detail table when
   a batch finished clean.
 - Read-only value blocks share one surface: `#fbfcfd` on `1px #e4e7eb`,
-  radius 8px, `12px 14px` padding — `.konteks` (SPK form, 2-col dl,
-  11px uppercase dt over 14px dd, collapsing to 1 col under 720px) and
-  `.pratinjau` (preview).
+  radius 8px, `12px 14px` padding — `.konteks` (2-col dl for values shown
+  rather than asked for; 11px dt over 14px dd, 3rd/5th cells full-width,
+  1 col under 720px; grep templates/) and `.pratinjau` (preview).
 
 ### Preview page
 
@@ -505,27 +700,51 @@ Measured on a rendered preview, not read off the stylesheet.
 
 ### Print
 
-The rundown is the one page meant to leave the screen, and it prints from
-the screen DOM — there is no print route, so there is no second copy to
-drift. The `@media print` block at the end of `base.html` hides everything
-that is not the schedule: nav, footer, both editing forms (picked by
+The pages meant to leave the screen take opposite approaches, for a reason.
+
+**The rundown prints from the screen DOM.** There is no print route, so
+there is no second copy to drift. One element carries both audiences:
+`.layar` shows on screen, `.cetak` in print, and `@media print` swaps the
+pair.
+
+**The sponsor sheet has its own route**, `/sponsors/{sponsor_id}/cetak` →
+`sponsor_print.html`, because the two versions are not the same document.
+The screen page is a staff worksheet showing cost; the sheet is what a
+sponsor reads. So the sheet carries no `.layar`/`.cetak` pairs — it is
+Indonesian throughout — and its route hands the template a context with no
+cost in it at all. **That is the guarantee: the forbidden numbers cannot
+print because they are never passed.** Do not "simplify" it into rendering
+the detail row objects. Its two buttons stay English, since staff open the
+URL and print hides them anyway.
+
+The shared `@media print` block at the end of `base.html` hides everything
+that is not the document: nav, footer, editing forms (picked by
 `section:has(.form-rapat)`, not by position), every action row, and the
-rundown table's two action columns. px throughout, as everywhere else —
-in print 96px is one inch, and `@page` margin is 48px.
+rundown table's two action columns. px throughout, as everywhere else — in
+print 96px is one inch, and `@page` margin is 48px. Measured: the sponsor
+sheet is 761px at ten lines against 1027px of printable A4 height, and
+about 42px per row, so roughly fifteen lines still fit one page. Nothing
+forces a longer one.
 
 Colour is the first thing a mono printer discards, so nothing may depend
 on it: every muted value returns to black, and the over-limit warning
 prints as a plain sentence with a bold lead rather than a red-ruled card.
 
-Language follows the audience, not the file. The printed sheet is carried
-by crew and vendors on site, so the **whole sheet** is Indonesian under
-the vendor-facing rule, alongside the SPK — while the screen stays
-staff-facing English. Both versions live in the same element: `.layar`
-shows on screen, `.cetak` in print, and `@media print` swaps the pair.
-That covers the table headers, the section title (Susunan Acara), all six
-chip labels, the duration cells, the totals line and the over-limit
-warning. Values follow too where the language changes them: the event
-date goes through `| tanggal` and every duration through `| durasi`.
+Language follows the audience, not the file. The printed rundown is carried
+by crew and vendors on site, so the **whole sheet** is Indonesian under the
+vendor-facing rule, alongside the SPK and the sponsor sheet — while the
+screen stays staff-facing English. On the rundown the pair covers the table
+headers, the section title (Susunan Acara), every chip label, the duration
+cells, the totals line and the over-limit warning. Values follow too where
+the language changes them: the event date goes through `| tanggal` and
+every duration through `| durasi`.
+
+`.alamat-lembar` and `.kalimat-lembar` are the sponsor sheet's body copy —
+the "Kepada:" line and the sentence introducing the table — at 14px/1.5,
+12px below, 16px under the sentence. Both are restated black inside the
+print block so a later colour on either cannot quietly print grey, and
+`.tabel tfoot td` takes a black top border there for the same reason: that
+rule is the only thing separating a total from the rows it adds up.
 
 What carries no `.layar`/`.cetak` pair, because it reads the same either
 way: `#`, `PIC`, clock times, the venue name, and the item text itself,
@@ -568,9 +787,11 @@ panel bottom padding.
 
 Radii in play, after the audit fixes:
 
-- **8px** — every form control (input, textarea, select) and every
-  bordered read-only box (`.konteks`, `.pratinjau`, `.metrik-kartu`),
-  plus nav links. This is the default for new work.
+- **8px** — every form control (input, textarea, select), every bordered
+  read-only box (`.konteks`, `.pratinjau`, `.metrik-kartu`,
+  `.ringkas-paket`), and the drawer trigger and its panel. This is the
+  default for new work.
+- **6px** — rows inside the drawer panel, and only those.
 - **5px** — buttons, `<article>`, checkboxes and radios, all inheriting
   Pico's `--pico-border-radius` at this root size.
 - **10px** — the panel, and only the panel.
@@ -578,9 +799,9 @@ Radii in play, after the audit fixes:
 
 ### Resolved by the audit
 
-The first audit found six places where two pages disagreed on the same
-element. All six are fixed; the rules above are what replaced them, and
-they are recorded here so the same ground is not re-litigated.
+The first audit found every place two pages disagreed on the same element.
+All of them are fixed; the rules above are what replaced them, and they are
+recorded here so the same ground is not re-litigated.
 
 1. **Text-control border and radius** — inputs and textareas kept Pico's
    `#cfd5e2` at 5px beside selects at `#e4e7eb`/8px. Now one treatment,
@@ -606,6 +827,12 @@ against 14px form controls. See Units.
 auth/login · automated reply parsing · quotations table · price
 comparison · file attachments · per-category templates · calendar
 integration · Docker · CI · comprehensive tests
+
+Catalog and sponsors, declared out of scope when those modules were
+specified and still unbuilt: item grouping of any kind · price history ·
+Excel import · bulk edit · slot capacity · cost sharing between sponsors ·
+event-level rollup across sponsors · sponsor tiers · payment tracking ·
+any PDF library — the browser's print-to-PDF is the whole mechanism.
 
 If you believe one is necessary, state the reason first. Do not build it.
 
