@@ -623,14 +623,27 @@ only.** It never sits beside a form control; anything outside a row is
 The quantity stepper on a sponsor package row is the one thing smaller
 than that, and the reason is that three controls share one cell:
 `.kendali-qty` is the flex row (right-aligned, 4px gap, no margin),
-`.btn-qty` the 24px square − and +, `.kotak-qty` the 46px typed box. All
-three are 24px tall. **In-row sizes are decided by what has to fit in the
-cell, not by a scale** — a lone action button is 32px, a cluster is
-smaller. Anything outside a row is still 34px.
+`.btn-qty` the 24px square − and +, `.kotak-qty` the 40px typed box —
+40px holds the 4-digit cap with room to spare. All three are 24px tall.
+**In-row sizes are decided by what has to fit in the cell, not by a
+scale** — a lone action button is 32px, a cluster is smaller. Anything
+outside a row is still 34px.
 
-`.kotak-qty` sets its own height and width because it would otherwise
-inherit the 34px and full width `.form-rapat` gives a text input on any
-page carrying that class.
+Both stepper rules are written as `.kendali-qty .btn-qty` and
+`.kendali-qty input.kotak-qty`, and both need the extra weight:
+
+- Pico sizes text inputs through three rules shaped like
+  `input:not([type=checkbox],[type=radio],[type=range])`. **A `:not()`
+  holding a LIST is the specificity of its most specific argument, not
+  the sum**, so those are (0,1,1) — and a lone class at (0,1,0) loses to
+  them by one element name. Left bare, the qty box rendered 114×62.5 with
+  Pico's 15px/20px padding instead of 40×24.
+- Pico gives every button `margin-bottom: 20px`, and `align-items:
+  center` centres the **margin** box — so the two buttons sat 10px above
+  the input they belong beside until the rule reset the margin.
+
+Neither is visible in the markup, and both look like the rule simply not
+applying. Measure the rendered box before assuming a value took.
 
 Disabled: `opacity: .45; cursor: not-allowed; filter: grayscale(35%)`.
 `.btn-qty` uses it for real: the − is disabled at qty 1, and is never the
