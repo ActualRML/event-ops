@@ -46,6 +46,45 @@ SEND_DELAY_SECONDS = _get_int("SEND_DELAY_SECONDS", 2)
 DB_PATH = os.getenv("DB_PATH", "db/rfq.db")
 
 
+# Zone surcharge on sponsor package lines. Getting an event further out costs
+# more to service, and the same percentage is added to what we pay and to what
+# the sponsor is charged, so the margin ratio survives the move.
+#
+# THE ONLY PLACE THE PERCENTAGES ARE WRITTEN. The event form builds its
+# dropdown from this mapping and db.harga_zona reads the same numbers, so a
+# rate cannot be changed in one and missed in the other. The keys are the
+# values stored in events.zona and are matched by the CHECK constraint there —
+# adding a zone here without adding it to the CHECK gets an insert refused.
+#
+# Keys are Indonesian because they are stored domain values, like nama_pt.
+# Labels are English because only procurement staff read them; Jabodetabek is
+# a proper noun and stays.
+#
+# Insertion order is the dropdown order, cheapest first.
+ZONA = {
+    "jabodetabek":      {"label": "Jabodetabek",         "pct": 0},
+    "luar_jabodetabek": {"label": "Outside Jabodetabek", "pct": 5},
+    "luar_jawa":        {"label": "Outside Java",        "pct": 10},
+}
+
+ZONA_DEFAULT = "jabodetabek"
+
+
+def zona_pct(zona: str) -> int:
+    """Surcharge percentage for a zone key.
+
+    An unknown key falls back to the default's rate rather than raising: the
+    CHECK on events.zona is what keeps unknown keys from existing, and a
+    reporting page should not 500 over a value the database already refused
+    to store."""
+    return ZONA.get(zona, ZONA[ZONA_DEFAULT])["pct"]
+
+
+def zona_label(zona: str) -> str:
+    """Display name for a zone key, for the one line that names it on screen."""
+    return ZONA.get(zona, ZONA[ZONA_DEFAULT])["label"]
+
+
 if __name__ == "__main__":
     print(f"SMTP_HOST           = {SMTP_HOST}")
     print(f"SMTP_PORT           = {SMTP_PORT}")

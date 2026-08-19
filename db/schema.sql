@@ -48,12 +48,24 @@ CREATE TABLE items (
 -- however many quote rounds it takes. judul_acara, tanggal_acara and lokasi
 -- live here and nowhere else — db.py grafts them back onto a request row so
 -- core/renderer and core/dokumen keep receiving the names they always had.
+-- zona is the fact the surcharge is computed from; lokasi is free text beside
+-- it and stays that way, because lokasi is printed into RFQ emails and the SPK
+-- and must not be reduced to a list of three.
+--
+-- Appended rather than placed next to lokasi so that a database built from
+-- this file and one migrated by db/migrations/001_zona.sql agree on column
+-- ORDER as well as content — ALTER TABLE ADD COLUMN can only append. Nothing
+-- depends on the order (every INSERT names its columns), but with no version
+-- table, being able to diff a migrated database against a fresh one is worth
+-- more than reading tidily.
 CREATE TABLE events (
     id            INTEGER PRIMARY KEY,
     judul_acara   TEXT NOT NULL,
     tanggal_acara TEXT,
     lokasi        TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    zona          TEXT NOT NULL DEFAULT 'jabodetabek'
+                  CHECK (zona IN ('jabodetabek', 'luar_jabodetabek', 'luar_jawa'))
 );
 
 -- One RFQ batch. An event can have several: a first round for tenda and
@@ -165,6 +177,12 @@ CREATE TABLE sponsors (
 -- jam_mulai so that moving the start reschedules the whole day: a rundown
 -- describes what will happen and has to follow the plan, a package records what
 -- was promised and has to stay put.
+-- zona_pct records WHY cost and value are what they are: the zone surcharge in
+-- force when the line was priced. Nothing sums it and no total reads it. It
+-- exists so that a line priced under one zone stays identifiable after its
+-- event moves to another — otherwise a stale snapshot is indistinguishable
+-- from a current one, and the difference reads as a bug rather than as
+-- history. It does not license repricing; see invariant 15.
 CREATE TABLE sponsor_item (
     id         INTEGER PRIMARY KEY,
     sponsor_id INTEGER NOT NULL REFERENCES sponsors(id) ON DELETE CASCADE,
@@ -173,6 +191,7 @@ CREATE TABLE sponsor_item (
     cost       INTEGER NOT NULL CHECK (cost >= 0),
     value      INTEGER NOT NULL CHECK (value >= 0),
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    zona_pct   INTEGER NOT NULL DEFAULT 0,
     UNIQUE (sponsor_id, item_id)
 );
 

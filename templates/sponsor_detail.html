@@ -22,6 +22,29 @@
 
 <section>
   <h3>Package</h3>
+  {# The surcharge must never look like a bug, so the rate that produced these
+     numbers is stated next to them rather than left to be inferred. #}
+  <p class="catatan-zona">
+    Zone <strong>{{ zona_label }}</strong>{% if zona_pct %} — catalog prices
+    carry <strong>+{{ zona_pct }}%</strong> on both cost and value for this
+    event{% else %} — no surcharge{% endif %}.
+  </p>
+
+  {# Priced under a rate the event no longer carries. Flagged, never repriced:
+     what was agreed stays agreed. Same shape as the over-budget notice — a
+     real state to know about, nothing disabled. #}
+  {% if baris_zona_lain %}
+  <article class="peringatan">
+    <strong>{{ baris_zona_lain|length }} line{{ "s" if baris_zona_lain|length != 1 }}
+    priced under a different zone.</strong>
+    This event is now {{ zona_label }} at +{{ zona_pct }}%, but
+    {% for b in baris_zona_lain %}{{ b.nama }} (+{{ b.zona_pct }}%){% if not loop.last %}, {% endif %}{% endfor %}
+    kept the rate in force when {{ "they were" if baris_zona_lain|length != 1 else "it was" }}
+    added. Nothing is repriced automatically — remove and re-add a line to put
+    it on today's rate.
+  </article>
+  {% endif %}
+
   {% include "_sponsor_package.html" %}
 </section>
 
@@ -44,11 +67,17 @@
         <select name="item_id" {% if errors.item_id %}aria-invalid="true"{% endif %}>
           <option value="">Choose an item</option>
           {% for i in pilihan %}
-          <option value="{{ i.id }}" {% if v is defined and v.item_id == i.id|string %}selected{% endif %}>{{ i.nama }}{% if i.satuan %} ({{ i.satuan }}){% endif %}</option>
+          {# value_zona, not the catalog base: this is what the line will
+             actually be priced at for this event. Showing the base and then
+             charging the surcharge is exactly how a correct number comes to
+             look like a defect. #}
+          <option value="{{ i.id }}" {% if v is defined and v.item_id == i.id|string %}selected{% endif %}>{{ i.nama }}{% if i.satuan %} ({{ i.satuan }}){% endif %} — {{ i.value_zona | rupiah }}</option>
           {% endfor %}
         </select>
         {% if errors.item_id %}<small>{{ errors.item_id }}</small>
-        {% else %}<small class="redup">Active catalog items not already on this package.</small>{% endif %}
+        {% else %}<small class="redup">Active catalog items not already on this
+          package. Prices shown include this event's {{ zona_label }}
+          {%- if zona_pct %} +{{ zona_pct }}%{% endif %} rate.</small>{% endif %}
       </label>
     </div>
 

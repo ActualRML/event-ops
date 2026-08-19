@@ -36,8 +36,26 @@
 
     <label>
       Location
+      {# Free text on purpose. It is printed verbatim into RFQ emails and the
+         SPK document, so it is an address, not a category. The zone beside it
+         is the categorised half. #}
       <input name="lokasi" value="{{ v.lokasi }}"
              placeholder="e.g. Balai Kartini, Jakarta Selatan">
+    </label>
+
+    <label>
+      Zone
+      {# Options come from config.ZONA, the one place the percentages are
+         written — the rate shown here and the rate the price maths applies
+         cannot drift apart because they are the same dict. #}
+      <select name="zona" {% if errors.zona %}aria-invalid="true"{% endif %}>
+        {% for key, z in zona_pilihan.items() %}
+        <option value="{{ key }}" {% if v.zona == key %}selected{% endif %}>{{ z.label }}{% if z.pct %} (+{{ z.pct }}%){% endif %}</option>
+        {% endfor %}
+      </select>
+      {% if errors.zona %}<small>{{ errors.zona }}</small>
+      {% else %}<small class="redup">Adds a surcharge to both cost and value
+        on every package line priced after this is set.</small>{% endif %}
     </label>
   </div>
 

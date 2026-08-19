@@ -11,6 +11,7 @@ it is built from a context that carries no cost at all — see sponsor_print."""
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+import config
 import db
 from core import dokumen
 from deps import parse_harga, templates
@@ -157,14 +158,25 @@ def muat_detail(request: Request, sponsor_id: int, errors: dict,
     if sponsor is None:
         raise HTTPException(status_code=404, detail="Sponsor not found")
 
+    baris = db.list_sponsor_items(sponsor_id)
+    pct = config.zona_pct(sponsor["zona"])
+    # Lines priced under a rate the event no longer carries. Reported, never
+    # repriced: the money on a sold line does not move (invariant 15), and the
+    # whole reason zona_pct is stored is so this stays visible instead of
+    # looking like an arithmetic error.
+    baris_zona_lain = [b for b in baris if b["zona_pct"] != pct]
+
     return {
         "request": request,
         "sponsor": sponsor,
-        "baris": db.list_sponsor_items(sponsor_id),
+        "baris": baris,
         "r": ringkasan(sponsor, db.sponsor_totals(sponsor_id)),
         "pilihan": db.items_available_for_sponsor(sponsor_id),
         "errors": errors,
         "oob": oob,
+        "zona_label": config.zona_label(sponsor["zona"]),
+        "zona_pct": pct,
+        "baris_zona_lain": baris_zona_lain,
     }
 
 

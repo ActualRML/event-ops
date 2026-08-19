@@ -270,13 +270,18 @@ def set_catalog_item_aktif(item_id: int, aktif: int) -> None:
 
 
 def create_event(judul_acara: str, tanggal_acara: str, lokasi: str,
+                 zona: str = config.ZONA_DEFAULT,
                  conn: sqlite3.Connection | None = None) -> int:
-    """Insert one event. Returns the new id."""
+    """Insert one event. Returns the new id.
+
+    zona defaults rather than being required: it is the cheapest zone and the
+    column's own DEFAULT says the same, so a caller that has no opinion writes
+    the same row either way."""
     with transaksi(conn) as c:
         cur = c.execute(
-            """INSERT INTO events (judul_acara, tanggal_acara, lokasi)
-               VALUES (?, ?, ?)""",
-            (judul_acara, tanggal_acara, lokasi),
+            """INSERT INTO events (judul_acara, tanggal_acara, lokasi, zona)
+               VALUES (?, ?, ?, ?)""",
+            (judul_acara, tanggal_acara, lokasi, zona),
         )
         return cur.lastrowid
 
@@ -301,7 +306,7 @@ def get_event(event_id: int) -> sqlite3.Row | None:
 
 
 def update_event(event_id: int, judul_acara: str, tanggal_acara: str,
-                 lokasi: str) -> None:
+                 lokasi: str, zona: str) -> None:
     """Overwrite one event's own fields.
 
     Nothing else moves. Batches, outbox rows, SPK and the rundown all reference
@@ -311,9 +316,9 @@ def update_event(event_id: int, judul_acara: str, tanggal_acara: str,
     with closing(get_conn()) as conn:
         conn.execute(
             """UPDATE events
-                  SET judul_acara = ?, tanggal_acara = ?, lokasi = ?
+                  SET judul_acara = ?, tanggal_acara = ?, lokasi = ?, zona = ?
                 WHERE id = ?""",
-            (judul_acara, tanggal_acara, lokasi, event_id),
+            (judul_acara, tanggal_acara, lokasi, zona, event_id),
         )
         conn.commit()
 
@@ -808,7 +813,7 @@ def move_item(item_id: int, direction: str) -> bool:
 # Sponsors need their event's title, date and location on the printed sheet, so
 # the join is written once here rather than left to each caller.
 SQL_SPONSOR_WITH_EVENT = """
-    SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi
+    SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi, e.zona
       FROM sponsors s
       JOIN events e ON e.id = s.event_id
 """
@@ -827,7 +832,7 @@ def list_sponsors(event_id: int | None = None) -> list[sqlite3.Row]:
     # Written out rather than built on SQL_SPONSOR_WITH_EVENT: this one needs a
     # LEFT JOIN and a GROUP BY, and the shared string is the plain row shape.
     sql = """
-        SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi,
+        SELECT s.*, e.judul_acara, e.tanggal_acara, e.lokasi, e.zona,
                COUNT(si.id) AS baris,
                COALESCE(SUM(si.qty * si.cost), 0)  AS cost_pakai,
                COALESCE(SUM(si.qty * si.value), 0) AS value_total
@@ -904,10 +909,14 @@ def list_sponsor_items(sponsor_id: int) -> list[sqlite3.Row]:
     The join to items supplies the name and unit only — display text, which is
     fine to follow the catalog. cost and value come from sponsor_item and are
     never read from items here: those are the snapshot, and the whole point is
-    that they do not move when the catalog does."""
+    that they do not move when the catalog does.
+
+    zona_pct rides along so the page can tell a line priced under the event's
+    current zone from one priced under an older zone. It is reported, never
+    acted on."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            """SELECT si.id, si.item_id, si.qty, si.cost, si.value,
+            """SELECT si.id, si.item_id, si.qty, si.cost, si.value, si.zona_pct,
                       i.nama, i.satuan
                  FROM sponsor_item si
                  JOIN items i ON i.id = si.item_id
@@ -921,11 +930,18 @@ def items_available_for_sponsor(sponsor_id: int) -> list[sqlite3.Row]:
     """Active catalog items this sponsor does not already have a line for.
 
     Archived items are out because the picker is for building a package now.
-    An item already on the package is out because UNIQUE(sponsor_id, item_id)
-    would refuse it — changing a quantity means removing the line and adding
-    it again, which re-snapshots the price, and that is the honest behaviour."""
+    An item already on the package is out because the quantity on the line
+    itself is how you get more of it.
+
+    Each row carries cost_zona and value_zona: the catalog base with this
+    event's zone surcharge already applied, which is what the line will
+    actually be priced at. The picker must offer the real number — a sponsor
+    shown the base and charged the surcharge sees the difference as a defect.
+    Returns dicts rather than Rows because of those two derived keys; every
+    caller reads by name, and Jinja treats the two the same."""
+    pct = config.zona_pct(zona_sponsor(sponsor_id) or config.ZONA_DEFAULT)
     with closing(get_conn()) as conn:
-        return conn.execute(
+        rows = conn.execute(
             """SELECT * FROM items
                 WHERE aktif = 1
                   AND id NOT IN (SELECT item_id FROM sponsor_item
@@ -933,6 +949,42 @@ def items_available_for_sponsor(sponsor_id: int) -> list[sqlite3.Row]:
                 ORDER BY nama""",
             (sponsor_id,),
         ).fetchall()
+
+    hasil = []
+    for r in rows:
+        d = dict(r)
+        d["cost_zona"] = harga_zona(r["cost"], pct)
+        d["value_zona"] = harga_zona(r["value"], pct)
+        hasil.append(d)
+    return hasil
+
+
+def harga_zona(base: int, pct: int) -> int:
+    """One catalog amount with a zone surcharge applied. Whole rupiah in,
+    whole rupiah out, and no float touches it at any point.
+
+    (base * (100 + pct) + 50) // 100 rounds half up on a non-negative amount:
+    multiplying first keeps full precision, and the + 50 is what carries a
+    half rupiah upward instead of truncating it away. One expression, so there
+    is no intermediate value that could be rounded twice.
+
+    The rate is never written here — it comes from config.ZONA, which is the
+    only place the percentages exist."""
+    return (base * (100 + pct) + 50) // 100
+
+
+def zona_sponsor(sponsor_id: int) -> str | None:
+    """The zone key of the event this sponsor belongs to, or None when the
+    sponsor does not exist. The zone lives on the event, never on the sponsor:
+    it is a property of where the thing happens."""
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            """SELECT e.zona FROM sponsors s
+                 JOIN events e ON e.id = s.event_id
+                WHERE s.id = ?""",
+            (sponsor_id,),
+        ).fetchone()
+    return row["zona"] if row else None
 
 
 def add_sponsor_item(sponsor_id: int, item_id: int, qty: int = 1) -> int | None:
@@ -943,11 +995,17 @@ def add_sponsor_item(sponsor_id: int, item_id: int, qty: int = 1) -> int | None:
     that was on the catalog at this instant and cannot be half-updated by a
     concurrent edit. After this the line never consults items for money again.
 
+    The zone surcharge is applied HERE, at insert, and frozen into the row
+    alongside the zona_pct that produced it. Reading the event's zone, the
+    catalog price and writing the line all happen in one transaction, so the
+    rate stored is the rate that was in force at that instant.
+
     Adding an item the sponsor already has increments the line that is there
     rather than raising: UNIQUE(sponsor_id, item_id) makes it a conflict, and
-    DO UPDATE adds to qty. cost and value are deliberately absent from the SET
-    list — an existing line keeps the snapshot it was created with, however the
-    catalog has been repriced since. Invariant 15."""
+    DO UPDATE adds to qty. cost, value and zona_pct are deliberately absent
+    from the SET list — an existing line keeps the snapshot it was created
+    with, however the catalog has been repriced or the event moved zone since.
+    Invariant 15."""
     with closing(get_conn()) as conn:
         conn.execute("BEGIN IMMEDIATE")
         item = conn.execute(
@@ -956,12 +1014,25 @@ def add_sponsor_item(sponsor_id: int, item_id: int, qty: int = 1) -> int | None:
         if item is None:
             conn.commit()
             return None
+        # Read inside the same transaction as the price it modifies.
+        acara = conn.execute(
+            """SELECT e.zona FROM sponsors s
+                 JOIN events e ON e.id = s.event_id
+                WHERE s.id = ?""",
+            (sponsor_id,),
+        ).fetchone()
+        if acara is None:
+            conn.commit()
+            return None
+        pct = config.zona_pct(acara["zona"])
         conn.execute(
-            """INSERT INTO sponsor_item (sponsor_id, item_id, qty, cost, value)
-               VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO sponsor_item
+                      (sponsor_id, item_id, qty, cost, value, zona_pct)
+               VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(sponsor_id, item_id)
                DO UPDATE SET qty = qty + excluded.qty""",
-            (sponsor_id, item_id, qty, item["cost"], item["value"]),
+            (sponsor_id, item_id, qty,
+             harga_zona(item["cost"], pct), harga_zona(item["value"], pct), pct),
         )
         # Read back rather than lastrowid: after DO UPDATE that is the rowid of
         # the conflicting insert attempt, not of the row that actually moved.

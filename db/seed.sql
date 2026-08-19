@@ -103,23 +103,33 @@ INSERT INTO items (id, nama, satuan, cost, value, catatan) VALUES
     (10, 'Backdrop panggung 8x4 m',  'unit',  2400000,  7500000, '');
 
 -- Four events. Two already run, one a fortnight out, one still being quoted.
-INSERT INTO events (id, judul_acara, tanggal_acara, lokasi, created_at) VALUES
+--
+-- All three zones appear, and lokasi agrees with zona on every row — Bogor and
+-- Jakarta are inside Jabodetabek, Bandung is Java but outside it, Bali is
+-- outside Java. The two are separate columns because lokasi is an address
+-- printed into vendor correspondence while zona is what the surcharge is
+-- computed from, but seeding them inconsistently would teach the wrong thing.
+--
+-- Event 3 is the one carrying sponsors, and it is deliberately the luar_jawa
+-- one: the surcharge is then visible on the sponsor pages on first load rather
+-- than only after someone edits an event.
+INSERT INTO events (id, judul_acara, tanggal_acara, lokasi, created_at, zona) VALUES
     (1, 'Gathering Tahunan Karyawan PT Cipta Karya Sentosa',
         date('now', 'localtime', '-42 days'),
         'Lapangan Parkir Utama, Sentul International Convention Center, Bogor',
-        date('now', 'localtime', '-62 days') || ' 08:55:03'),
+        date('now', 'localtime', '-62 days') || ' 08:55:03', 'jabodetabek'),
     (2, 'Resepsi Pernikahan Anindya dan Bagas',
         date('now', 'localtime', '-21 days'),
         'Balai Kartini, Jalan Gatot Subroto Kav. 37, Jakarta Selatan',
-        date('now', 'localtime', '-40 days') || ' 13:47:26'),
+        date('now', 'localtime', '-40 days') || ' 13:47:26', 'jabodetabek'),
     (3, 'Peluncuran Produk Nusantara Fresh Series',
         date('now', 'localtime', '+14 days'),
-        'Ballroom Hotel Grand Mercure, Jalan Hayam Wuruk, Jakarta Pusat',
-        date('now', 'localtime', '-13 days') || ' 10:02:41'),
+        'Ballroom Hotel Grand Inna, Jalan Pantai Kuta, Badung, Bali',
+        date('now', 'localtime', '-13 days') || ' 10:02:41', 'luar_jawa'),
     (4, 'Seminar Nasional Transformasi Digital UMKM',
         date('now', 'localtime', '+42 days'),
         'Auditorium Gedung Serbaguna, Universitas Padjadjaran, Bandung',
-        date('now', 'localtime', '-4 days') || ' 15:11:08');
+        date('now', 'localtime', '-4 days') || ' 15:11:08', 'luar_jabodetabek');
 
 -- One send is one category, so a big event is quoted in one batch per trade.
 -- Event 1 runs three: Tenda, Lighting and Catering, each with its own
@@ -408,11 +418,25 @@ INSERT INTO sponsors (id, event_id, nama_pt, kontribusi, persen_budget, catatan,
 -- cost and value are the catalog prices as they stood when each line was added,
 -- copied in rather than joined — the same snapshot the app writes. Editing an
 -- item in /items afterwards leaves these untouched, which is the whole point.
-INSERT INTO sponsor_item (sponsor_id, item_id, qty, cost, value, created_at) VALUES
-    -- 4.610.000 of a 6.000.000 budget: 1.390.000 still free.
-    (1, 1, 1, 3500000, 12000000, date('now', 'localtime', '-12 days') || ' 09:40:02'),
-    (1, 4, 4,  150000,   500000, date('now', 'localtime', '-12 days') || ' 09:41:37'),
-    (1, 6, 6,   85000,   300000, date('now', 'localtime', '-11 days') || ' 16:22:41'),
-    -- 2.550.000 against a 1.800.000 budget: 750.000 over.
-    (2, 5, 2,  750000,  2500000, date('now', 'localtime',  '-9 days') || ' 14:18:09'),
-    (2, 7, 3,  350000,  1200000, date('now', 'localtime',  '-8 days') || ' 11:07:33');
+--
+-- Both sponsors are on event 3, which is luar_jawa, so every amount here is the
+-- catalog base with +10% already applied: (base * 110 + 50) / 100, the same
+-- arithmetic db.harga_zona does. zona_pct records the 10 that produced them, so
+-- moving event 3 to another zone makes these lines show as older-rate rather
+-- than as numbers that do not add up.
+--
+--   item 1  3.500.000 -> 3.850.000    12.000.000 -> 13.200.000
+--   item 4    150.000 ->   165.000       500.000 ->    550.000
+--   item 6     85.000 ->    93.500       300.000 ->    330.000
+--   item 5    750.000 ->   825.000     2.500.000 ->  2.750.000
+--   item 7    350.000 ->   385.000     1.200.000 ->  1.320.000
+INSERT INTO sponsor_item (sponsor_id, item_id, qty, cost, value, created_at, zona_pct) VALUES
+    -- 5.071.000 of a 6.000.000 budget: 929.000 still free.
+    (1, 1, 1, 3850000, 13200000, date('now', 'localtime', '-12 days') || ' 09:40:02', 10),
+    (1, 4, 4,  165000,   550000, date('now', 'localtime', '-12 days') || ' 09:41:37', 10),
+    (1, 6, 6,   93500,   330000, date('now', 'localtime', '-11 days') || ' 16:22:41', 10),
+    -- 2.805.000 against a 1.800.000 budget: 1.005.000 over. Still the
+    -- deliberate over-budget sponsor after the surcharge — the warning state
+    -- renders on first load, which is the reason this row is here.
+    (2, 5, 2,  825000,  2750000, date('now', 'localtime',  '-9 days') || ' 14:18:09', 10),
+    (2, 7, 3,  385000,  1320000, date('now', 'localtime',  '-8 days') || ' 11:07:33', 10);

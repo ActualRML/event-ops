@@ -19,20 +19,29 @@
 </div>
 
 <table class="tabel">
-  {# Location takes the width because it is the only column that runs long —
-     a venue name carries a hall, a street and a city. #}
+  {# Measured, not guessed. At the table's 18px: "30 September 2026" needs
+     170px so Date takes 18%, and the rate note is "+5%" at 34px rather than a
+     sentence — "+5% on package lines" needs 161px and turned the zone cell
+     into four lines. "Outside Jabodetabek" needs 182px against Zone's 160px
+     and wraps to two, which is accepted: buying it a third column's worth of
+     width would come out of Location, and a venue name wraps worse.
+     Batches is 9% because the "BATCHES" header itself needs 95px and clipped
+     at 8%; the 1% comes from the action column, which has slack — .btn-mini
+     is capped at 6rem/120px and 13% still leaves it 125px. #}
   <colgroup>
-    <col style="width: 28%">
+    <col style="width: 22%">
+    <col style="width: 18%">
+    <col style="width: 22%">
     <col style="width: 16%">
-    <col style="width: 28%">
-    <col style="width: 11%">
-    <col style="width: 17%">
+    <col style="width: 9%">
+    <col style="width: 13%">
   </colgroup>
   <thead>
     <tr>
       <th>Event</th>
       <th>Date</th>
       <th>Location</th>
+      <th>Zone</th>
       <th class="angka">Batches</th>
       <th></th>
     </tr>
@@ -43,6 +52,13 @@
       <td><strong>{{ e.judul_acara }}</strong></td>
       <td>{{ e.tanggal_acara | date or "—" }}</td>
       <td class="redup">{{ e.lokasi or "—" }}</td>
+      {# Direct lookup, not .get: the CHECK on events.zona is what makes every
+         stored value a key of this mapping. The rate rides underneath as the
+         row's second line, the same shape items.html gives a note. #}
+      <td>
+        {{ zona_map[e.zona].label }}
+        {% if zona_map[e.zona].pct %}<div class="redup">+{{ zona_map[e.zona].pct }}%</div>{% endif %}
+      </td>
       {# Counted in SQL by list_events. A batch is an RFQ round against this
          event, so zero means it has been booked but not yet quoted. #}
       <td class="angka">{{ e.batches }}</td>
@@ -55,7 +71,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="5" class="kosong">
+      <td colspan="6" class="kosong">
         No events yet. An event is the day everything else hangs off — RFQ
         batches, sponsors and the rundown all point at one. Start with
         <a href="/events/new">New event</a>.

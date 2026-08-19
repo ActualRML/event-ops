@@ -10,6 +10,7 @@ from datetime import date
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+import config
 import db
 from deps import templates
 
@@ -54,11 +55,20 @@ def validasi_event(data: dict) -> tuple[dict, dict]:
     if pesan:
         errors["tanggal_acara"] = pesan
 
+    # The dropdown offers exactly these keys and the CHECK on events.zona
+    # admits exactly these keys; this is the third gate, so a hand-posted
+    # value is a message rather than an IntegrityError.
+    if data["zona"] not in config.ZONA:
+        errors["zona"] = "Choose a zone from the list."
+    else:
+        parsed["zona"] = data["zona"]
+
     return parsed, errors
 
 
 def kosong() -> dict:
-    return {"judul_acara": "", "tanggal_acara": "", "lokasi": ""}
+    return {"judul_acara": "", "tanggal_acara": "", "lokasi": "",
+            "zona": config.ZONA_DEFAULT}
 
 
 def form_context(request: Request, acara, v: dict, errors: dict) -> dict:
@@ -72,6 +82,10 @@ def form_context(request: Request, acara, v: dict, errors: dict) -> dict:
         "action": f"/events/{acara['id']}" if acara else "/events",
         "v": v,
         "errors": errors,
+        # The one mapping, straight from config: the dropdown cannot disagree
+        # with the percentages the price maths uses because there is only one
+        # copy of them.
+        "zona_pilihan": config.ZONA,
     }
 
 
@@ -79,7 +93,16 @@ def form_context(request: Request, acara, v: dict, errors: dict) -> dict:
 async def event_list(request: Request):
     events = db.list_events()
     return templates.TemplateResponse(
-        request, "events.html", {"events": events, "jumlah": len(events)}
+        request, "events.html",
+        {
+            "events": events,
+            "jumlah": len(events),
+            # Same mapping the form's dropdown uses. The list renders the rate
+            # too: an event's zone is what its package lines get priced at, so
+            # hiding it here would mean opening every event to find out which
+            # ones carry a surcharge.
+            "zona_map": config.ZONA,
+        },
     )
 
 
@@ -98,9 +121,10 @@ async def event_create(
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
     lokasi: str = Form(""),
+    zona: str = Form(config.ZONA_DEFAULT),
 ):
     data = {"judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
-            "lokasi": lokasi}
+            "lokasi": lokasi, "zona": zona}
     parsed, errors = validasi_event(data)
 
     if errors:
@@ -110,7 +134,8 @@ async def event_create(
             status_code=422,
         )
 
-    db.create_event(judul_acara.strip(), parsed["tanggal_acara"], lokasi.strip())
+    db.create_event(judul_acara.strip(), parsed["tanggal_acara"], lokasi.strip(),
+                    parsed["zona"])
     return RedirectResponse("/events", status_code=303)
 
 
@@ -125,6 +150,7 @@ async def event_form_edit(request: Request, event_id: int):
         # The date input wants ISO, which is what the column already holds.
         "tanggal_acara": acara["tanggal_acara"] or "",
         "lokasi": acara["lokasi"] or "",
+        "zona": acara["zona"],
     }
     return templates.TemplateResponse(
         request, "event_form.html", form_context(request, acara, v, {})
@@ -138,13 +164,14 @@ async def event_update(
     judul_acara: str = Form(""),
     tanggal_acara: str = Form(""),
     lokasi: str = Form(""),
+    zona: str = Form(config.ZONA_DEFAULT),
 ):
     acara = db.get_event(event_id)
     if acara is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
     data = {"judul_acara": judul_acara, "tanggal_acara": tanggal_acara,
-            "lokasi": lokasi}
+            "lokasi": lokasi, "zona": zona}
     parsed, errors = validasi_event(data)
 
     if errors:
@@ -155,5 +182,5 @@ async def event_update(
         )
 
     db.update_event(event_id, judul_acara.strip(), parsed["tanggal_acara"],
-                    lokasi.strip())
+                    lokasi.strip(), parsed["zona"])
     return RedirectResponse("/events", status_code=303)

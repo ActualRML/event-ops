@@ -327,6 +327,13 @@
     /* Over budget. The app's failure red, and the only colour on the strip. */
     .nilai-minus { color: #b3261e; }
 
+    /* The zone line above the package table. Supporting text, not a heading:
+       it explains the numbers under it and must not compete with them. Same
+       size and colour as .status-batch, which does the same job for a batch. */
+    .catatan-zona { margin: 0 0 12px; font-size: 13px; line-height: 1.5;
+                    color: var(--pico-muted-color); }
+    .catatan-zona strong { color: var(--teks-gelap); font-weight: 600; }
+
     /* Quantity stepper, sponsor package rows only. Right-aligned like the
        number it replaces, so the column still reads as numeric. 24px controls
        rather than the 32px of .btn-mini: three of them share one cell, and the
