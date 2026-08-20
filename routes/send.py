@@ -8,7 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 import db
-from core import renderer
+from core import kode, renderer
 import tasks
 from deps import parse_ids, templates
 
@@ -16,8 +16,38 @@ router = APIRouter()
 
 BRIEF_KOSONG = {
     "judul_acara": "", "tanggal_acara": "", "lokasi": "", "kategori": "",
-    "kebutuhan": "", "deadline": "", "pengirim_nama": "",
+    "kebutuhan": "", "deadline": "", "pengirim_nama": "", "kode": "",
 }
+
+
+def pakai_kode(diajukan: str) -> str:
+    """The reference code this batch will carry, minted here if it has none.
+
+    Why the code is decided at PREVIEW rather than at insert: the marker is
+    part of the subject, and the preview's whole job is to show the subject
+    that will be sent. create_request does not run until dispatch, so waiting
+    for the row would mean previewing a subject that is missing its marker.
+
+    A code already carried by the form is kept, so going Back and previewing
+    again does not churn through a new code each time — the user sees one code
+    for one batch, which is what they will read on the reply.
+
+    Checked free against the table, and re-rolled if not. This is not the real
+    guard — nothing owns a code until the row exists, and db.create_request
+    re-rolls on the UNIQUE index if it loses that race — but it means the
+    ordinary case never reaches the race at all.
+    """
+    calon = (diajukan or "").strip().upper()
+    if kode.POLA.fullmatch(kode.tanda(calon)) and not db.kode_exists(calon):
+        return calon
+
+    for _ in range(db.MAKS_UNDIAN_KODE):
+        calon = kode.buat_kode()
+        if not db.kode_exists(calon):
+            return calon
+    # Fall through with the last one drawn: create_request re-rolls on the
+    # UNIQUE index anyway, so this is a slow day, not a failure.
+    return calon
 
 
 def parse_tanggal(teks: str):
@@ -99,13 +129,19 @@ def validasi_brief(brief: dict, vendor_ids: list[int],
     return errors
 
 
-def brief_dari_form(kebutuhan: str, deadline: str, pengirim_nama: str) -> dict:
+def brief_dari_form(kebutuhan: str, deadline: str, pengirim_nama: str,
+                    kode_batch: str = "") -> dict:
     """The three fields this page still owns. judul_acara, tanggal_acara and
-    lokasi are filled in afterwards by pilih_event, from the event row."""
+    lokasi are filled in afterwards by pilih_event, from the event row.
+
+    kode_batch is not a field anyone types — it rides the form as a hidden
+    value so the code minted at preview survives Back, a validation bounce and
+    the final dispatch as one value."""
     brief = dict(BRIEF_KOSONG)
     brief["kebutuhan"] = kebutuhan
     brief["deadline"] = deadline
     brief["pengirim_nama"] = pengirim_nama
+    brief["kode"] = kode_batch
     return brief
 
 
@@ -158,11 +194,15 @@ async def send_back(
     vendor_ids: list[str] = Form([]),
     subject_template: str = Form(""),
     body_template: str = Form(""),
+    kode_batch: str = Form("", alias="kode"),
 ):
     """Back from preview. Same rebuild path the validation bounce uses, minus
     the errors, so the brief and the vendor selection both come back. The edited
-    templates ride along too, so a detour to add a vendor does not undo them."""
-    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama)
+    templates ride along too, so a detour to add a vendor does not undo them.
+
+    The code rides along unvalidated and unminted — this route only puts the
+    page back the way it was. Preview is where it is decided."""
+    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama, kode_batch)
     acara_id, acara, brief = pilih_event(event_id, brief)
     kategori_id, kategori_row = pilih_kategori(category_id)
     brief["kategori"] = kategori_row["nama"] if kategori_row else ""
@@ -191,8 +231,12 @@ async def send_preview(
     vendor_ids: list[str] = Form([]),
     subject_template: str = Form(""),
     body_template: str = Form(""),
+    kode_batch: str = Form("", alias="kode"),
 ):
-    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama)
+    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama, kode_batch)
+    # Decided here, before anything renders: the marker is part of the subject,
+    # and this page exists to show the subject that will be sent.
+    brief["kode"] = pakai_kode(kode_batch)
     acara_id, acara, brief = pilih_event(event_id, brief)
     kategori_id, kategori_row = pilih_kategori(category_id)
     brief["kategori"] = kategori_row["nama"] if kategori_row else ""
@@ -286,9 +330,14 @@ async def send_dispatch(
     subject_template: str = Form(""),
     body_template: str = Form(""),
     request_id: str = Form(""),
+    kode_batch: str = Form("", alias="kode"),
 ):
     """Phase A: one fast transaction, then hand off to the background."""
-    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama)
+    brief = brief_dari_form(kebutuhan, deadline, pengirim_nama, kode_batch)
+    # Normally the code arrives from the preview that minted it and is kept
+    # as-is. pakai_kode still runs so a dispatch that somehow arrives without
+    # one gets a code rather than sending unmarkable mail.
+    brief["kode"] = pakai_kode(kode_batch)
     acara_id, acara, brief = pilih_event(event_id, brief)
     kategori_id, kategori_row = pilih_kategori(category_id)
     brief["kategori"] = kategori_row["nama"] if kategori_row else ""
@@ -342,7 +391,8 @@ async def send_dispatch(
         with closing(db.get_conn()) as conn:
             baru = db.create_request(brief, subject_template, body_template,
                                      category_id=kategori_id,
-                                     event_id=acara_id, conn=conn)
+                                     event_id=acara_id, kode=brief["kode"],
+                                     conn=conn)
             db.create_outbox_rows(baru, ids, subjects=subjects, conn=conn)
             conn.commit()
     except sqlite3.IntegrityError as e:

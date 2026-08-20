@@ -84,7 +84,22 @@ CREATE TABLE requests (
     pengirim_nama    TEXT,
     subject_template TEXT NOT NULL,
     body_template    TEXT NOT NULL,
-    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    -- The reference code printed into the outgoing subject as [RFQ-3F2A]. A
+    -- subject survives a vendor pressing Reply, so this is what comes back on
+    -- the answer and says which batch it belongs to.
+    --
+    -- Nullable, and appended rather than placed beside the templates, for the
+    -- same two reasons events.zona was: NULL is the true history for every
+    -- batch that went out before codes existed — a backfill would claim a code
+    -- no vendor ever saw — and ALTER TABLE ADD COLUMN can only append, so a
+    -- database built from this file and one migrated by
+    -- db/migrations/002_kode.sql agree on column ORDER as well as content.
+    --
+    -- UNIQUE lives in idx_requests_kode below, because ADD COLUMN cannot carry
+    -- it. SQLite treats NULLs as distinct there, so every pre-code batch
+    -- coexists under it without needing a sentinel.
+    kode             TEXT
 );
 
 CREATE TABLE outbox (
@@ -197,6 +212,9 @@ CREATE TABLE sponsor_item (
 
 CREATE INDEX idx_vendor_categories_category ON vendor_categories(category_id);
 CREATE INDEX idx_requests_event ON requests(event_id);
+-- UNIQUE, not a plain index: this is requests.kode's constraint, which
+-- ALTER TABLE ADD COLUMN could not carry. See the column comment.
+CREATE UNIQUE INDEX idx_requests_kode ON requests(kode);
 CREATE INDEX idx_outbox_request ON outbox(request_id);
 CREATE INDEX idx_outbox_status ON outbox(status);
 CREATE INDEX idx_vendors_aktif ON vendors(aktif);

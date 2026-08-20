@@ -61,6 +61,12 @@
   <input type="hidden" name="deadline" value="{{ brief.deadline }}">
   <input type="hidden" name="pengirim_nama" value="{{ brief.pengirim_nama }}">
   <input type="hidden" name="category_id" value="{{ category_id }}">
+  {# The batch's reference code, minted when this preview was built. It rides
+     all three buttons — Back, re-preview and dispatch — so the code in the
+     subject above is the code that ends up on the row and in the sent mail.
+     Drop this field and every preview mints a fresh one, and the subject shown
+     stops being the subject sent. #}
+  <input type="hidden" name="kode" value="{{ brief.kode }}">
   {% for vid in vendor_ids %}
   <input type="hidden" name="vendor_ids" value="{{ vid }}">
   {% endfor %}

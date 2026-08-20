@@ -8,6 +8,8 @@ from pathlib import Path
 
 from jinja2 import StrictUndefined, Template
 
+from core import kode
+
 # email_templates/ sits at the project root, one level above this package.
 # The extra .parent is what the move into core/ cost — the directory itself
 # did not move.
@@ -103,7 +105,13 @@ def render_email(
     brief: dict,
     vendor: dict,
 ) -> tuple[str, str]:
-    """Render one email for one vendor. Returns (subject, body)."""
+    """Render one email for one vendor. Returns (subject, body).
+
+    The single render path — preview, dispatch and the subject pre-render all
+    arrive here, which is invariant 9. brief["kode"] is optional and, when
+    present, is what puts the [RFQ-xxxx] marker on the subject; see the note
+    where it is applied below.
+    """
     konteks = {
         "nama_pt": vendor.get("nama_pt") or "",
         "pic_nama": vendor.get("pic_nama") or "",
@@ -125,5 +133,16 @@ def render_email(
     for nama, hasil in (("subject", subject), ("body", body)):
         if "{{" in hasil or "}}" in hasil:
             raise ValueError(f"Unresolved placeholder left in the {nama}.")
+
+    # The batch marker goes on LAST, and the order above it is deliberate.
+    # After the whitespace collapse, so the marker cannot be folded into a
+    # line break; after the placeholder check, so the check only ever inspects
+    # what the templates produced and can never be tripped by something this
+    # function added itself.
+    #
+    # This is the one thing in the subject the editable template does not
+    # decide. A batch with no kode — every batch sent before codes existed —
+    # renders exactly as it always did.
+    subject = kode.tandai_subjek(subject, brief.get("kode"))
 
     return subject, body

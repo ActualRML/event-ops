@@ -6,6 +6,10 @@ from datetime import date
 
 import config
 from core import penomoran
+# Aliased: this module already has a `kode` in scope as a parameter name in
+# more than one place, and shadowing an imported module with an argument is the
+# kind of bug that only shows up on the line that finally calls it.
+from core import kode as core_kode
 
 
 def get_conn() -> sqlite3.Connection:
@@ -336,8 +340,13 @@ SQL_REQUEST_WITH_EVENT = """
 
 # What core.renderer.render_email reads out of a brief. Named here so the
 # shape has one definition rather than one per caller.
+#
+# kode rides along because the subject marker is rendered from it. A batch
+# created before codes existed carries NULL and renders no marker, so the field
+# is present-but-empty rather than absent — renderer reads it with .get() and
+# treats blank and missing alike.
 BRIEF_FIELDS = ("judul_acara", "tanggal_acara", "lokasi", "kategori",
-                "kebutuhan", "deadline", "pengirim_nama")
+                "kebutuhan", "deadline", "pengirim_nama", "kode")
 
 
 def brief_dari_row(row) -> dict:
@@ -362,8 +371,40 @@ def konteks_vendor(vendor, kategori: str) -> dict:
     }
 
 
+def kode_exists(kode: str) -> bool:
+    """The UNIQUE index on requests.kode is the real guard; this exists so the
+    send page can re-roll a colliding code before it ever reaches an INSERT,
+    rather than letting the user's dispatch be the thing that discovers it."""
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM requests WHERE kode = ?", (kode,)
+        ).fetchone()
+    return row is not None
+
+
+def request_by_kode(kode: str) -> sqlite3.Row | None:
+    """The batch carrying one reference code, or None.
+
+    None is a real answer rather than only a bad input: a code can be
+    well-formed and still match nothing, because deleting an event cascades its
+    batches away while the mail quoting that code is still in someone's inbox."""
+    if not kode:
+        return None
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            SQL_REQUEST_WITH_EVENT + " WHERE r.kode = ?", (kode,)
+        ).fetchone()
+
+
+# How many times create_request re-rolls a colliding code before giving up.
+# 65,536 codes against a demo's worth of batches makes one collision unlikely
+# and two vanishingly so: the cap bounds the loop, it is not a limit anything
+# is expected to approach.
+MAKS_UNDIAN_KODE = 10
+
+
 def create_request(brief: dict, subject_template: str, body_template: str,
-                   category_id: int, event_id: int,
+                   category_id: int, event_id: int, kode: str | None = None,
                    conn: sqlite3.Connection | None = None) -> int:
     """Insert one RFQ batch against an event that already exists. Returns the
     new request id.
@@ -374,19 +415,46 @@ def create_request(brief: dict, subject_template: str, body_template: str,
     only thing that branch could still do is mint an untitled orphan event from
     a brief whose title happens to be blank. A function must admit exactly what
     its callers can produce, the same rule a CHECK constraint follows.
-    Something that genuinely needs a new event calls create_event."""
+    Something that genuinely needs a new event calls create_event.
+
+    kode is the caller's PREFERRED code, not a promise. /send mints one at
+    preview so the subject shown is the subject sent, and checks it free — but
+    nothing owns a code until this row exists, so another batch can take it in
+    between. A collision here is caught on the UNIQUE index and re-rolled
+    rather than raised: losing that race must not cost the user their dispatch.
+    The re-roll is the one case where a sent subject differs from the previewed
+    one, and it differs only inside the marker. Passing None mints one outright,
+    for any caller with no preview step to mint it earlier."""
     with transaksi(conn) as c:
-        cur = c.execute(
-            """INSERT INTO requests (event_id, category_id, kebutuhan, deadline,
-                                     pengirim_nama, subject_template, body_template)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (
-                event_id, category_id, brief.get("kebutuhan", ""),
-                brief.get("deadline", ""), brief.get("pengirim_nama", ""),
-                subject_template, body_template,
-            ),
-        )
-        return cur.lastrowid
+        for percobaan in range(MAKS_UNDIAN_KODE):
+            calon = kode if (kode and percobaan == 0) else core_kode.buat_kode()
+            try:
+                # SAVEPOINT rather than a bare retry: the caller may have handed
+                # us their connection mid-transaction — Phase A of a send does
+                # exactly that — and a failed INSERT would otherwise poison it.
+                # This unwinds the one statement and leaves the rest standing.
+                c.execute("SAVEPOINT undian_kode")
+                cur = c.execute(
+                    """INSERT INTO requests (event_id, category_id, kebutuhan, deadline,
+                                             pengirim_nama, subject_template,
+                                             body_template, kode)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        event_id, category_id, brief.get("kebutuhan", ""),
+                        brief.get("deadline", ""), brief.get("pengirim_nama", ""),
+                        subject_template, body_template, calon,
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                c.execute("ROLLBACK TO undian_kode")
+                c.execute("RELEASE undian_kode")
+                continue
+            c.execute("RELEASE undian_kode")
+            return cur.lastrowid
+
+    raise RuntimeError(
+        f"no free RFQ code found in {MAKS_UNDIAN_KODE} attempts"
+    )
 
 
 def create_outbox_rows(request_id: int, vendor_ids, subjects: dict | None = None,

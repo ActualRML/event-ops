@@ -18,6 +18,11 @@
 <form id="form-kirim" method="post" action="/send/preview" class="form-rapat form-kirim">
   {# No template fields ride along: the preview screen no longer edits them, so
      the routes always fall back to the files in email_templates/. #}
+  {# Blank on a first visit, filled after a trip through preview. Carrying it
+     back means Back-then-preview shows the same reference code rather than
+     minting a new one on every look. #}
+  <input type="hidden" name="kode" value="{{ brief.kode }}">
+
   <section>
     <h3>Event</h3>
 
