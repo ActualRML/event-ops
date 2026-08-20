@@ -24,15 +24,22 @@ PANJANG_BYTE = 2
 # and prefixed with "Re:" twice over.
 AWALAN = "RFQ-"
 
-# What to look for coming back. Anchored to the same shape TANDA writes, and
-# deliberately strict about the alphabet: [0-9A-F] is what secrets.token_hex
-# produces uppercased, so anything else was not minted here.
+# What to look for coming back. Same shape tanda() writes, and strict about
+# the alphabet: [0-9A-F] is what token_hex produces uppercased, so a marker
+# using other letters was never minted here.
+#
+# CASE-INSENSITIVE, and deliberately so even though every code we write is
+# uppercase. The failure modes are not symmetric: matching loosely costs us a
+# stray tier-4 row that someone glances at, while matching strictly drops a
+# real vendor reply at the gate, silently, because a human retyped the code in
+# lowercase. dari_subjek normalises what it finds, so nothing downstream has to
+# know this.
 #
 # Used by the reply gate to decide whether a message is plausibly about an RFQ
 # at all, which is why it tests SHAPE and not existence — a well-formed code
-# that matches no batch is a real case (a deleted batch, a mangled forward) and
-# has to be admitted so it can be reported rather than silently dropped.
-POLA = re.compile(r"\[" + AWALAN + r"([0-9A-F]{4})\]")
+# matching no batch is a real case (a deleted batch, a mangled forward) and has
+# to be admitted so it can be reported rather than dropped.
+POLA = re.compile(r"\[" + AWALAN + r"([0-9A-Fa-f]{4})\]", re.IGNORECASE)
 
 
 def buat_kode() -> str:
@@ -84,4 +91,7 @@ def dari_subjek(subject: str) -> str | None:
     "Fwd:" have accumulated in front of it.
     """
     hasil = POLA.findall(subject or "")
-    return hasil[-1] if hasil else None
+    # Upper-cased on the way out: the column stores uppercase, so a lowercase
+    # marker retyped by a human still resolves to the same batch. Everything
+    # downstream compares against requests.kode and never sees the difference.
+    return hasil[-1].upper() if hasil else None
