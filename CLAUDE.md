@@ -85,6 +85,20 @@ folded into db/schema.sql so a fresh build matches — add columns at the END
 of the table there, because ALTER TABLE ADD COLUMN can only append, and that
 keeps a migrated database diffable against a new one.
 
+Apply one with:
+
+    python -c "import sqlite3,sys; c=sqlite3.connect('db/rfq.db'); c.executescript(open(sys.argv[1],encoding='utf-8').read()); c.close()" db/migrations/00X.sql
+
+Back the database up first — init_db.py prints the command it wants.
+
+`python -m sqlite3 db/rfq.db ".read ..."` does NOT work and is not an
+alternative: that module has no `.read`, and the invocation fails with
+`OperationalError (SQLITE_ERROR): near ".": syntax error` before running a
+single statement. The real sqlite3 CLI does support `.read`, but it is not
+installed on this machine. Both migration headers carried the broken form
+until it was actually run; if a fifth copy of this command ever appears,
+correct it there too.
+
 Import direction is one-way. core/ may import config and other core
 modules, and nothing else from this project: never db, deps, tasks, or
 anything under routes/. Routers may import db, deps, tasks and core.

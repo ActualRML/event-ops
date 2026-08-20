@@ -8,7 +8,13 @@
 -- until a version table exists, and it is a safe one — it refuses rather
 -- than half-applying.
 --
---   python -m sqlite3 db/rfq.db ".read db/migrations/001_zona.sql"
+--   python -c "import sqlite3,sys; c=sqlite3.connect('db/rfq.db'); c.executescript(open(sys.argv[1],encoding='utf-8').read()); c.close()" db/migrations/001_zona.sql
+--
+-- NOT `python -m sqlite3 db/rfq.db ".read ..."`, which is what this line used
+-- to say: that module has no .read, and the invocation dies with
+-- `OperationalError (SQLITE_ERROR): near ".": syntax error` before running a
+-- single statement. The real sqlite3 CLI does support .read, but it is not
+-- installed here, so the one-liner above is the working route.
 --
 -- Take a backup first. init_db.py prints the VACUUM INTO command it wants.
 --

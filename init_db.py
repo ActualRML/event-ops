@@ -72,9 +72,26 @@ def tolak(db_path: Path) -> int:
 
     # VACUUM INTO, not a file copy: it writes one consistent database including
     # pages still sitting in the -wal, which copying rfq.db alone would miss.
+    #
+    # The python one-liner is offered FIRST because it is the one that works
+    # everywhere. The sqlite3 CLI is not installed on every machine this runs
+    # on, and the fallback printed here used to be `python -m sqlite3`, which
+    # is a dead end: that module has no dot commands to drive, so the line sent
+    # people to something that could not do the job.
+    # as_posix() on both paths, and it is load-bearing rather than cosmetic:
+    # on Windows these render as db\rfq.db, and a backslash inside the Python
+    # string literal below is an escape — 'file:db\rfq.db' carries a carriage
+    # return, not an r. Forward slashes work for SQLite on every platform.
+    sumber = db_path.as_posix()
+    tujuan = cadangan.as_posix()
+
     print("\n  back it up first:", file=sys.stderr)
-    print(f"    sqlite3 {db_path} \"VACUUM INTO '{cadangan}'\"", file=sys.stderr)
-    print(f"    or, without the sqlite3 CLI:  python -m sqlite3 {db_path}",
+    print(
+        f"    python -c \"import sqlite3; c=sqlite3.connect('file:{sumber}?mode=ro',"
+        f" uri=True); c.execute(\\\"VACUUM INTO '{tujuan}'\\\"); c.close()\"",
+        file=sys.stderr,
+    )
+    print(f"    or, with the sqlite3 CLI:  sqlite3 {sumber} \"VACUUM INTO '{tujuan}'\"",
           file=sys.stderr)
     print("\n  then re-run, or pass --force to delete it now.", file=sys.stderr)
     return 1
