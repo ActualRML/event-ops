@@ -89,7 +89,7 @@ Language — the split is by audience, not by file:
                      also serves a quantity field), capped at terbilang.MAKS
     tasks.py         SEND_TASKS, dispatch_batch, schedule_batch (phase B)
     replies.py       the reply check: IMAP fetch, gate, match ladder, store.
-                     tasks.py's peer — see Import direction. NOT BUILT YET
+                     tasks.py's peer — see Import direction
     config.py        .env loading, and ZONA — the one mapping of zone key to
                      label and surcharge percentage, read by both the event
                      form and the price maths
@@ -101,6 +101,8 @@ Language — the split is by audience, not by file:
                      reads it back. See "Reply matching" below
     core/            domain logic, no web layer
       mailer.py      SMTP send, honours DRY_RUN
+      inbox.py       IMAP fetch and message parsing. mailer's counterpart,
+                     and pure of db — bytes in, plain dicts out
       kode.py        the RFQ batch reference code — minting it, stamping it
                      onto a subject, reading it back off one. The one place
                      the format lives
@@ -125,6 +127,17 @@ config is also where the IMAP settings live. IMAP_USER and IMAP_PASS fall back
 to the SMTP pair — same Gmail account, same app password, no second credential
 — and exist only so the two CAN be separated. DRY_RUN does not gate them; see
 invariant 2.
+
+**db/rfq.db is no longer the whole system.** Attachment bytes live on the
+filesystem under `attachments/`, so a `VACUUM INTO` of the database restores
+every reply row with its filename, size and content type and not one byte of
+any attachment — the rows look intact and the downloads 404. Copy
+`attachments/` alongside the database. Nothing automates this.
+
+Nothing prunes it either: **inbox rows and attachment files are never deleted;
+revisit before the mailbox holds a year.** That is a decision, not an
+oversight, and the two facts compound — the directory only grows, and only a
+manual copy protects it.
 
 db/migrations/ holds hand-applied SQL, numbered. There is no version table:
 nothing records that a migration ran, and re-running one fails on the
@@ -183,12 +196,13 @@ Template filenames are English, and the shape says what the page is:
 
     {plural}.html            a list page      vendors.html, items.html,
                                               sponsors.html, events.html,
-                                              tracker.html
+                                              tracker.html, replies.html
     {singular}_form.html     a record form    vendor_form.html, item_form.html,
                                               sponsor_form.html, event_form.html,
                                               category_form.html, spk_form.html
     {singular}_detail.html   one record       tracker_detail.html,
-                                              sponsor_detail.html
+                                              sponsor_detail.html,
+                                              reply_detail.html
     {singular}_print.html    a printable      sponsor_print.html
     _{name}.html             a partial        _vendor_table.html, _progress.html,
                                               _vendor_stats.html, _send_pick_vendor.html,
@@ -232,6 +246,13 @@ format the same values; they differ only in which audience reads the result.
   for the interface only. Both parse through renderer.ke_tanggal, so the
   two languages accept and reject exactly the same inputs and only the
   month table differs.
+- tampilan.pesan_imap is its sibling for a failed reply check, with its own
+  table rather than more branches in pesan_error: the two share no exception
+  names, and the actions they suggest differ — a send failure is about one
+  vendor's address, a read failure about the account or the network.
+  Authentication is singled out because it is the one a user can fix, and it
+  is what a fresh setup hits first, since Gmail also needs IMAP switched on in
+  its own settings.
 - tampilan.pesan_error maps an aiosmtplib exception name to one plain
   English line for the tracker's failure column. Translation happens on
   display, not on write: the raw "ExceptionName: detail" string stays in
@@ -243,7 +264,7 @@ The Jinja filters, and which one you reach for is decided by audience, not
 by convenience:
 
 - staff-facing, from tampilan — `date`, `datetime`, `error_message`,
-  `duration`. Everything the interface renders.
+  `imap_error`, `duration`. Everything the interface renders.
 - vendor-facing, from renderer — `tanggal`, `durasi`. The printed rundown
   and the printed sponsor sheet; the email body calls renderer directly
   rather than through a filter. Indonesian filter names on purpose:
@@ -276,6 +297,25 @@ Events (/events). Rundown and SPK have no entry of their own — both are
 per-event or per-batch with no top-level list, and are reached from
 Tracker. The rundown does light Events in the trigger, since it lives
 under /events/{id}; that is the same parent-lighting `/categories` gets.
+
+Replies get no entry either, for the same reason and one more: the question
+they answer — who has not replied yet — is a fact about a batch, so they live
+under /tracker/replies and light Tracker. A top-level entry would make them a
+second inbox, which is the thing this feature is built not to be.
+
+The drawer trigger carries a count of incoming mail not yet dealt with:
+unread attached replies plus everything waiting to be assigned. On the TRIGGER,
+not only on the panel entry, because the panel is collapsed by default and a
+number nobody can see is not a badge. Tier 4 is excluded — unmatched mail is
+not waiting to be dealt with, and a number that never goes down stops being
+read. The count comes from `perlu_perhatian()`, a Jinja global wired in
+main.py: a callable, because base.html renders on every page and a value read
+at startup would be stale on the second load.
+
+**routes/replies.py must be included BEFORE routes/tracker.py.** Tracker owns
+/tracker/{request_id}, which matches any single segment, so "replies" would be
+captured as a request_id and 422 on int conversion — a path parameter that
+fails validation does not fall through to the next route.
 
 ## Schema
 
@@ -340,8 +380,23 @@ vendor with no category still appears with kategori NULL. Load-bearing:
 the vendor list, the send-page picker and the outbox/tracker queries all
 read the view rather than re-joining vendor_categories.
 
+inbox(id PK, message_id TEXT NOT NULL UNIQUE, from_email NOT NULL, from_nama,
+      subject NOT NULL, received_at NOT NULL, body NOT NULL,
+      tier INTEGER NOT NULL CHECK(tier IN (1,2,3,4)),
+      request_id FK ON DELETE CASCADE, outbox_id FK ON DELETE CASCADE,
+      vendor_id FK, read_at, created_at,
+      auto_reply INTEGER NOT NULL DEFAULT 0 CHECK(auto_reply IN (0,1)))
+
+inbox_attachment(id PK, inbox_id FK ON DELETE CASCADE, filename NOT NULL,
+                 content_type NOT NULL, size_bytes CHECK(size_bytes >= 0),
+                 stored_name TEXT NOT NULL UNIQUE)
+
+inbox_check(id PK, started_at NOT NULL, ok CHECK(ok IN (0,1)), error_msg,
+            examined DEFAULT 0, kept DEFAULT 0)
+
 Indexes: idx_vendor_categories_category, idx_requests_event,
-idx_requests_kode (UNIQUE),
+idx_requests_kode (UNIQUE), idx_inbox_request, idx_inbox_outbox,
+idx_inbox_tier, idx_inbox_attachment_inbox,
 idx_outbox_request, idx_outbox_status, idx_vendors_aktif, idx_spk_request,
 idx_sponsors_event, idx_sponsor_item_sponsor.
 
@@ -383,6 +438,21 @@ Rationale:
 - spk is stored rather than generated on demand: the SPK must be
   re-downloadable with the same nomor. Storing it makes the number
   stable and gives procurement a record of what was issued.
+- inbox.message_id is the incoming message's OWN id, not ours, and it is the
+  dedupe key — see Reply matching for why that is load-bearing
+- inbox.received_at is the SENDER's clock, from their Date header. It can be
+  skewed or even earlier than the RFQ it answers; created_at is ours and is
+  the tie-break. A reply that appears to predate its own request is a badly
+  set clock, not corruption
+- inbox_check is a log rather than a settings row because it answers three
+  questions at once with no session to hold them: where to resume, when the
+  last check ran, and what went wrong on it. "Never checked" is then the
+  natural absence of rows rather than a sentinel value
+- inbox.auto_reply marks a generated message. Set from headers only, never
+  from the subject. Excluded from the replied count and the badge, included
+  everywhere else — see Reply matching for why the gate cannot do this job
+- inbox_attachment.stored_name is the name WE chose; filename is the vendor's
+  and is display-only. The split is the security guarantee, not a convention
 - sponsor_item.cost and .value are snapshots, not a join. See invariant 15.
 - sponsor_item.zona_pct is not data the app computes with — it is the
   surcharge rate that produced the snapshot beside it, kept so a line
@@ -463,11 +533,77 @@ Re-run `cek_message_id.py` and update the block above if this ever looks wrong.
 It sends a real email — and note that .env carries DRY_RUN=false, so nothing
 short-circuits that. It is run deliberately, never as part of a build.
 
-**What the incoming half will be**, decided but not written: `replies.py` at
-the root, tasks.py's peer, holding the whole check — IMAP fetch, the gate, the
-match ladder, the writes. No scheduler and no poller; a button starts it.
-imaplib is synchronous, so a handler must call it through asyncio.to_thread or
-it blocks the event loop, in-flight send batches included.
+**The incoming half.** `replies.py` holds the whole check — fetch, gate,
+ladder, writes. No scheduler and no poller; a button starts it, and the handler
+calls it through `asyncio.to_thread` because imaplib is synchronous and would
+otherwise block the event loop, in-flight send batches included.
+
+*The watermark.* `IMAP SEARCH SINCE` has DATE granularity only — there is no
+"since 14:32" — so every run re-examines the whole day of the last successful
+one. `inbox.message_id UNIQUE` is what makes that overlap a no-op, which is why
+it is the dedupe key rather than a defensive extra. The watermark is
+`MAX(started_at) WHERE ok = 1`: a failed run must not advance it, or the day it
+failed on is skipped forever and a visible error becomes silent data loss.
+
+*A refused SEARCH is not an empty mailbox.* They were collapsed in the first
+draft, and that is precisely the failure this feature exists to prevent — the
+run records as a success finding nothing, the watermark advances past unread
+mail, and the interface says "no replies" with total confidence. A non-OK
+SEARCH raises. A non-OK FETCH does not: the difference is scope. Failing to
+search means we learned nothing about the mailbox; failing to fetch means we
+lost one message, which is still on the server next time.
+
+*The gate* admits a message only if the sender is a known vendor OR the subject
+carries a well-formed `[RFQ-xxxx]` — shape, not resolution, which is what makes
+tier 4 reachable at all. Everything else is dropped before it is written.
+
+The gate also prevents a wrong answer the ladder would otherwise give. **A
+bounce from mailer-daemon carries References pointing at our own sent
+Message-ID** — verified, three of them sit in the live mailbox. Reaching tier 1
+it would attach to that vendor's outbox row and display as their reply, the
+exact opposite of what it means. It never gets there because mailer-daemon is
+not a vendor and "Delivery Status Notification (Failure)" carries no code.
+
+*Auto-replies are the case the gate CANNOT catch.* A bounce never reaches the
+ladder because mailer-daemon is not a vendor — but an out-of-office **is** the
+vendor: same address, usually with In-Reply-To, so it matches at tier 1 against
+the exact outbox row, correctly. It would then count toward "5 of 8 vendors
+have replied", and that count is the point of the feature.
+
+So it is flagged rather than blocked. `inbox.auto_reply` is set from headers
+and the row is stored and displayed like any other — an admin should see that
+the vendor's server answered — but it is left out of the replied count and out
+of the nav badge. Same shape as `tier`: record what the thing is, let the
+display decide. The badge exclusion has its own reason: an out-of-office needs
+no action, and a badge that counts things nobody must act on gets ignored.
+
+Detection is **by header, never by subject**. Sniffing for "Out of Office" or
+"Automatic reply" is localised guesswork, and this app writes to Indonesian
+vendors whose servers answer in Indonesian. Three mechanisms:
+`Auto-Submitted` (RFC 3834) present with any value but `no`, allowing for a
+`; type=vacation` parameter · `X-Autoreply` or `X-Autorespond` present ·
+`Precedence` of `auto_reply`, `bulk` or `junk`.
+
+Checked against the real mailbox rather than trusted from the spec: of its 9
+messages, the three mailer-daemon bounces carry `Auto-Submitted: auto-replied`
+and **nothing carries X-Autoreply, X-Autorespond or Precedence at all**. So the
+RFC 3834 path is confirmed against live traffic and the other two are
+unexercised there — they exist for vendors' own mail servers, which that
+mailbox contains no example of. Google's notifications carry none of the three
+(they use `Feedback-ID` and a `bounces.google.com` return path) and are gated
+out by sender anyway.
+
+*The code match is case-insensitive* even though every code minted is
+uppercase. The failure modes are not symmetric: matching loosely costs a stray
+tier-4 row someone glances at, while matching strictly drops a real vendor
+reply at the gate, silently, because a human retyped the code in lowercase.
+
+*Attachments* live on the filesystem under `attachments/`, never in a column.
+The on-disk name is built from the reply id and the file's position in the
+message; the vendor's filename is stored for display and for the
+Content-Disposition header only. Path traversal is not defended against — the
+attacker-controlled string never touches a path, so it is unreachable, the same
+shape of guarantee the sponsor print route has about cost.
 
 ## Invariants
 
@@ -560,6 +696,40 @@ it blocks the event loop, in-flight send batches included.
     The rate itself lives in exactly one place (config.ZONA). Anything that
     displays a percentage and anything that multiplies by one read from
     there, so a rate cannot be changed for the maths and missed on the form.
+18. A reply's tier is HISTORY and is never rewritten. inbox.tier records how
+    the message was matched; assigning a held reply by hand fills request_id
+    and outbox_id and leaves tier standing. So "needs assigning" is
+    `tier = 3 AND request_id IS NULL`, not a status that flips.
+
+    This is invariant 17's shape with a different input: store what produced
+    the outcome, so a hand-assigned reply stays distinguishable from one the
+    ladder resolved. Without it, correct history is indistinguishable from a
+    mis-match, and the honest answer looks like a bug. The test for anything
+    new touching inbox is whether `tier` appears in its SET list. It must not.
+
+    Tier 3 NEVER attaches on its own, and that is the point rather than
+    caution: one vendor working two concurrent events cannot be told apart by
+    their address, and concurrent events are normal here.
+
+20. A generated reply is RECORDED and not COUNTED. inbox.auto_reply is set
+    from headers, and the row is stored, listed and openable like any other —
+    but it is excluded from progress()'s replied count and from
+    count_needs_attention(). The gate cannot do this job: an out-of-office
+    comes from the vendor's own address with In-Reply-To and is a legitimate
+    tier-1 match.
+
+    This is invariant 18's shape again — store what the thing is, let the
+    display decide — and the same test applies: anything new that counts
+    replies must say `auto_reply = 0`, or a vacation notice silently becomes
+    an answer.
+
+19. outbox.status is a DELIVERY outcome and reply state is derived, never
+    written onto it. The CHECK admits 'replied' and _progress.html has a label
+    for it; both are deliberately unused. Writing it would overwrite 'sent' and
+    lose whether the mail actually went, and reply state is per reply rather
+    than per vendor — a revised quote has to read as new, which one column
+    cannot express.
+
 16. judul_acara, tanggal_acara and lokasi live in events and nowhere else.
     Every other table reaches them by joining on event_id — requests,
     outbox, spk and rundown all carry the id and none of them carries a
