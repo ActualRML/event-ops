@@ -1,7 +1,10 @@
-"""CLI: rebuild the database from scratch. python init_db.py [--force]
+"""CLI: rebuild the database from scratch.
+
+    python init_db.py [--force] [--no-seed]
 
 Refuses to run over an existing database. --force is the old unconditional
-behaviour, kept for a rebuild that is meant to throw the current one away."""
+behaviour, kept for a rebuild that is meant to throw the current one away.
+--no-seed builds the schema and nothing else, for starting genuinely empty."""
 
 import sqlite3
 import sys
@@ -191,14 +194,26 @@ def main(argv: list[str]) -> int:
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # --no-seed builds the schema and stops: no vendors, no catalog, no
+    # batches, every page on its own empty state. The demo default is the
+    # opposite — seeded, so nothing looks broken on first load — so this is
+    # the flag you reach for when you want to walk the flow from nothing and
+    # see what a new install actually feels like.
+    #
+    # It also skips salin_lampiran: that copies the placeholder PDF into place
+    # for an inbox row seed.sql creates, and with no seed there is no row to
+    # hang it off.
+    tanpa_seed = "--no-seed" in argv
+
     with closing(db.get_conn()) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        conn.executescript(SEED_PATH.read_text(encoding="utf-8"))
-        # After the seed: this hangs off an inbox row seed.sql creates.
-        salin_lampiran(conn)
+        if not tanpa_seed:
+            conn.executescript(SEED_PATH.read_text(encoding="utf-8"))
+            # After the seed: this hangs off an inbox row seed.sql creates.
+            salin_lampiran(conn)
         conn.commit()
 
-        print(f"created  {db_path}")
+        print(f"created  {db_path}" + ("  (schema only, no seed)" if tanpa_seed else ""))
         for table in TABLES:
             count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             print(f"  {table:<18} {count:>3}")
