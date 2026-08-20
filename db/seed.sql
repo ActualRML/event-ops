@@ -138,9 +138,9 @@ INSERT INTO events (id, judul_acara, tanggal_acara, lokasi, created_at, zona) VA
 -- Batch 1 carries the full templates; the rest read them back out rather than
 -- repeating thirty lines of email five more times. Every batch stores its own
 -- copy, which is what the app does on a real send.
--- Every seeded batch carries a kode. NULL is the right value for rows MIGRATED
--- by 002_kode.sql — those really did go out before codes existed — but it is
--- the wrong value for a fresh seed: without one, no seeded subject carries an
+-- Every seeded batch carries a kode. The column is nullable because NULL is
+-- honest for a batch that went out before codes existed, but it is the wrong
+-- value for a fresh seed: without one, no seeded subject carries an
 -- [RFQ-xxxx] marker, and tier 2 of the reply ladder has nothing to match on.
 -- Half the reply feature would be undemonstrable on a fresh build.
 --

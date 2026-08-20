@@ -139,26 +139,21 @@ revisit before the mailbox holds a year.** That is a decision, not an
 oversight, and the two facts compound — the directory only grows, and only a
 manual copy protects it.
 
-db/migrations/ holds hand-applied SQL, numbered. There is no version table:
-nothing records that a migration ran, and re-running one fails on the
-duplicate column rather than half-applying. Every migration also has to be
-folded into db/schema.sql so a fresh build matches — add columns at the END
-of the table there, because ALTER TABLE ADD COLUMN can only append, and that
-keeps a migrated database diffable against a new one.
+**Schema changes are made by editing db/schema.sql and rebuilding.** There are
+no migrations. `python init_db.py --force` deletes the database and builds a
+new one from schema.sql and seed.sql; without `--force` it refuses, lists the
+rows it would destroy, and prints the backup command it wants.
 
-Apply one with:
+The data is demo data and it is regenerated, not preserved, so an ALTER TABLE
+path buys nothing. There was a db/migrations/ directory of hand-applied
+numbered SQL for four changes; every one of them was also folded into
+schema.sql, which is what every build actually used, so the files were a second
+description of the schema that nobody ran. Verified equivalent and deleted.
 
-    python -c "import sqlite3,sys; c=sqlite3.connect('db/rfq.db'); c.executescript(open(sys.argv[1],encoding='utf-8').read()); c.close()" db/migrations/00X.sql
-
-Back the database up first — init_db.py prints the command it wants.
-
-`python -m sqlite3 db/rfq.db ".read ..."` does NOT work and is not an
-alternative: that module has no `.read`, and the invocation fails with
-`OperationalError (SQLITE_ERROR): near ".": syntax error` before running a
-single statement. The real sqlite3 CLI does support `.read`, but it is not
-installed on this machine. Both migration headers carried the broken form
-until it was actually run; if a fifth copy of this command ever appears,
-correct it there too.
+Column ORDER in schema.sql is therefore free — put a new column where it reads
+best. Several existing ones sit at the end of their table for no better reason
+than that ALTER TABLE could only append when they were added; that is history,
+not a rule to follow.
 
 Import direction is one-way. core/ may import config and other core
 modules, and nothing else from this project: never db, deps, tasks,

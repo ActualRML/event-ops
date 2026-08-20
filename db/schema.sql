@@ -52,12 +52,11 @@ CREATE TABLE items (
 -- it and stays that way, because lokasi is printed into RFQ emails and the SPK
 -- and must not be reduced to a list of three.
 --
--- Appended rather than placed next to lokasi so that a database built from
--- this file and one migrated by db/migrations/001_zona.sql agree on column
--- ORDER as well as content — ALTER TABLE ADD COLUMN can only append. Nothing
--- depends on the order (every INSERT names its columns), but with no version
--- table, being able to diff a migrated database against a fresh one is worth
--- more than reading tidily.
+-- zona sits after created_at rather than next to lokasi purely because it was
+-- added later, when the only way to add a column was to append one. That is
+-- history, not a rule: schema changes are made by editing this file and
+-- rebuilding, so a new column goes wherever it reads best. Nothing depends on
+-- column order — every INSERT names its columns.
 CREATE TABLE events (
     id            INTEGER PRIMARY KEY,
     judul_acara   TEXT NOT NULL,
@@ -89,16 +88,17 @@ CREATE TABLE requests (
     -- subject survives a vendor pressing Reply, so this is what comes back on
     -- the answer and says which batch it belongs to.
     --
-    -- Nullable, and appended rather than placed beside the templates, for the
-    -- same two reasons events.zona was: NULL is the true history for every
-    -- batch that went out before codes existed — a backfill would claim a code
-    -- no vendor ever saw — and ALTER TABLE ADD COLUMN can only append, so a
-    -- database built from this file and one migrated by
-    -- db/migrations/002_kode.sql agree on column ORDER as well as content.
+    -- Nullable, because NULL is the true history for any batch that went out
+    -- before codes existed — a backfill would claim a code no vendor ever saw.
+    -- The seed gives every batch one, since a seeded database with no codes
+    -- cannot demonstrate matching a reply by its subject.
     --
-    -- UNIQUE lives in idx_requests_kode below, because ADD COLUMN cannot carry
-    -- it. SQLite treats NULLs as distinct there, so every pre-code batch
-    -- coexists under it without needing a sentinel.
+    -- Sits at the end for the same reason events.zona does: it was added when
+    -- appending was the only option. Not a rule to follow.
+    --
+    -- UNIQUE lives in idx_requests_kode below rather than on the column, and
+    -- that is worth keeping: SQLite treats NULLs as distinct in an index, so
+    -- every code-less batch coexists under it without needing a sentinel.
     kode             TEXT
 );
 
@@ -254,7 +254,7 @@ CREATE TABLE inbox (
     --
     -- Recorded, not filtered: stored and displayed like any other reply, and
     -- left out of the count and the badge. Same shape as tier — store what it
-    -- is, let the display decide. Appended, like every migrated column.
+    -- is, let the display decide.
     auto_reply  INTEGER NOT NULL DEFAULT 0 CHECK (auto_reply IN (0, 1))
 );
 
