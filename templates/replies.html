@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Replies — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h2>Replies</h2>
+  <p class="chips">
+    {# Never a bare zero: "nobody replied" and "the check has not run" look
+       identical as a number, and only one of them is worth acting on. #}
+    {% if cek_berhasil %}
+    <span class="chip">last checked <span class="chip-angka">{{ cek_berhasil | datetime }}</span></span>
+    {% else %}
+    <span class="chip">never checked</span>
+    {% endif %}
+    <span class="chip"><span class="chip-angka">{{ perlu_assign|length }}</span> to assign</span>
+  </p>
+</hgroup>
+
+{# The failure banner. article.peringatan is the serious variant — a red left
+   rule — because a check that did not run is not a routine empty result. The
+   raw server string stays on the tooltip, the way the tracker's failure
+   column does it. Nothing is disabled: the fix is to try again. #}
+{% if cek_terakhir and not cek_terakhir.ok %}
+<article class="peringatan">
+  <strong>The last reply check failed.</strong>
+  <span title="{{ cek_terakhir.error_msg }}">{{ cek_terakhir.error_msg | imap_error }}</span>
+  Nothing was read, so this page shows only what earlier checks found — it is
+  not a statement that no one replied.
+</article>
+{% endif %}
+
+<div class="grid">
+  <div></div>
+  <div class="aksi-halaman">
+    <a href="/tracker" role="button" class="secondary outline">All requests</a>
+    <form method="post" action="/tracker/replies/check">
+      <button type="submit">Check replies</button>
+    </form>
+  </div>
+</div>
+
+<section>
+  <h3>Needs assigning</h3>
+  {# Tier 3: we know the sender and nothing else. Never attached automatically
+     — one vendor working two concurrent events cannot be told apart by their
+     address, and concurrent events are normal here. #}
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 22%">
+      <col style="width: 34%">
+      <col style="width: 16%">
+      <col style="width: 28%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>From</th>
+        <th>Subject</th>
+        <th>Received</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in perlu_assign %}
+      <tr>
+        <td>
+          <strong>{{ b.nama_pt or "Unknown vendor" }}</strong>
+          <div class="redup sel-teks" title="{{ b.from_email }}">{{ b.from_email }}</div>
+        </td>
+        <td>{{ b.subject }}</td>
+        <td class="redup sel-teks">{{ b.received_at }}</td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            <a href="/tracker/replies/{{ b.id }}" role="button"
+               class="secondary outline btn-mini btn-spk">Open and assign</a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4" class="kosong">
+          {% if pernah %}
+          Nothing waiting. Replies that match a batch are attached
+          automatically and show up on that batch in Tracker.
+          {% else %}
+          No check has run yet — press "Check replies" to read the mailbox for
+          the first time. This is not a count of zero.
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h3>Unmatched</h3>
+  {# Tier 4: a well-formed [RFQ-xxxx] naming no batch, from someone who is not
+     a vendor. Read-only on purpose — there is nothing to choose from, so there
+     is no chooser. Deliberately not counted in the nav badge either: this is
+     mail we could not place, not mail waiting to be dealt with. #}
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 26%">
+      <col style="width: 42%">
+      <col style="width: 16%">
+      <col style="width: 16%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>From</th>
+        <th>Subject</th>
+        <th>Received</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in tak_cocok %}
+      <tr>
+        <td class="redup sel-teks" title="{{ b.from_email }}">{{ b.from_email }}</td>
+        <td>{{ b.subject }}</td>
+        <td class="redup sel-teks">{{ b.received_at }}</td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            <a href="/tracker/replies/{{ b.id }}" role="button"
+               class="secondary outline btn-mini">Open</a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4" class="kosong">
+          Nothing here. Mail lands in this list only when it carries a batch
+          code that no longer matches anything — a deleted batch, or a code
+          mangled in a forward.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

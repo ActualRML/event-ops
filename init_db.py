@@ -21,7 +21,8 @@ SEED_PATH = BASE_DIR / "db" / "seed.sql"
 # and rundown_item slipped past unnoticed.
 TABLES = ["categories", "vendors", "vendor_categories", "items", "events",
           "requests", "outbox", "spk", "rundown", "rundown_item",
-          "sponsors", "sponsor_item"]
+          "sponsors", "sponsor_item", "inbox", "inbox_attachment",
+          "inbox_check"]
 
 
 def hitung_baris(db_path: Path):

@@ -513,6 +513,21 @@
        carry, so it takes the weight and the dark text — the same split
        .chip-angka uses to put a value ahead of its label. */
     .bilah .nama-halaman { font-weight: 600; color: var(--teks-gelap); }
+    /* Incoming replies not yet dealt with. #1565c0 is the app's existing
+       "replied" colour, reused rather than a new one invented for the nav.
+       px throughout, like all new CSS here. 18px min-width keeps a two-digit
+       count round rather than letting it stretch into an oval. Appears in two
+       places from one value — the trigger and the Tracker row — so they
+       cannot disagree. */
+    .lencana-nav { display: inline-block; min-width: 18px; padding: 0 5px;
+                   margin-left: 7px; border-radius: 999px;
+                   background: #1565c0; color: #fff;
+                   font-size: 12px; font-weight: 600; line-height: 18px;
+                   text-align: center; }
+    /* Inside the panel it sits at the right-hand end of the row rather than
+       against the label, so a column of entries stays readable. */
+    .bilah .menu-ringkas > summary + ul li a + .lencana-nav {
+      float: right; margin-top: -25px; margin-right: 10px; }
 
     /* The panel. Absolutely positioned, so it lies over the page instead of
        pushing it down; nothing between it and <body> sets overflow, so nothing
@@ -765,6 +780,13 @@
      returns there, so it lights Vendors, exactly as it did when the four links
      were visible. #}
   {% if path.startswith("/categories") %}{% set ns.disini = "Vendors" %}{% endif %}
+  {# Incoming mail not yet dealt with: unread attached replies plus everything
+     waiting to be assigned. A callable from main.py, read per request — a
+     value computed at startup would be stale on the second page load.
+     Inside this {% with %} like everything else here: a top-level {% set %}
+     in base.html silently shadows a context key of the same name in every
+     child, which has already cost one page a wrong count. #}
+  {% set perlu = perlu_perhatian() %}
 
   <header class="bilah">
     <nav class="container">
@@ -777,12 +799,16 @@
             <summary>
               <span class="ikon-menu" aria-hidden="true">&#9776;</span>
               <span class="nama-halaman">{{ ns.disini or "Menu" }}</span>
+              {# On the trigger, because the panel is collapsed by default: a
+                 count only inside the menu is invisible until you open it,
+                 which is the opposite of what a badge is for. #}
+              {% if perlu %}<span class="lencana-nav">{{ perlu }}</span>{% endif %}
             </summary>
             <ul>
               {% for grup in kelompok %}
               {% if not loop.first %}<li role="separator"></li>{% endif %}
               {% for tujuan, nama in grup %}
-              <li><a href="{{ tujuan }}" {% if ns.disini == nama %}aria-current="page"{% endif %}>{{ nama }}</a></li>
+              <li><a href="{{ tujuan }}" {% if ns.disini == nama %}aria-current="page"{% endif %}>{{ nama }}</a>{% if nama == "Tracker" and perlu %}<span class="lencana-nav">{{ perlu }}</span>{% endif %}</li>
               {% endfor %}
               {% endfor %}
             </ul>

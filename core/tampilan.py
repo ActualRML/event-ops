@@ -117,3 +117,50 @@ def pesan_error(error_msg) -> str:
         return "Rejected by recipient server"
 
     return PESAN_ERROR.get(nama, "Send failed")
+
+
+# Reading the mailbox fails differently from sending to it, so it gets its own
+# table rather than more branches in pesan_error: the two share no exception
+# names, and the actions they suggest are different — a send failure is about
+# one vendor's address, a read failure is about the account or the network.
+PESAN_IMAP = {
+    "IMAP4.error": "Mailbox rejected the login — check the app password",
+    "IMAP4.abort": "Mailbox closed the connection mid-check",
+    "IMAP4.readonly": "Mailbox is read-only",
+    "error": "Mailbox rejected the request",
+    "abort": "Mailbox closed the connection mid-check",
+    "gaierror": "Mail server address not found",
+    "timeout": "Mail server did not respond in time",
+    "TimeoutError": "Mail server did not respond in time",
+    "ConnectionRefusedError": "Connection refused by mail server",
+    "ConnectionResetError": "Mail server dropped the connection",
+    "SSLError": "Secure connection to the mail server failed",
+    "SSLCertVerificationError": "Mail server certificate could not be verified",
+    "OSError": "Could not reach the mail server",
+}
+
+
+def pesan_imap(error_msg) -> str:
+    """One human line for a failed reply check, from the stored
+    'ExceptionName: detail' string.
+
+    Same rule as pesan_error: the raw string stays in inbox_check.error_msg and
+    translation happens here, so reworded messages need no migration and the
+    full server response is still available in a tooltip.
+
+    Authentication is singled out because it is the one failure the user can
+    fix themselves, and because it is what a fresh setup hits first — Gmail
+    also needs IMAP switched on in its own settings, which surfaces as the same
+    login rejection."""
+    if not error_msg:
+        return ""
+
+    nama, _, detail = str(error_msg).partition(":")
+    nama = nama.strip()
+
+    # imaplib raises IMAP4.error for everything from a bad password to a
+    # malformed command, so the detail is what separates them.
+    if "AUTHENTICATIONFAILED" in detail or "Invalid credentials" in detail:
+        return "Mailbox rejected the login — check the app password, and that IMAP is enabled in Gmail"
+
+    return PESAN_IMAP.get(nama, "Could not read the mailbox")

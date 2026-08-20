@@ -7,8 +7,34 @@
   <p class="chips">
     <span class="chip"><span class="chip-angka">{{ requests|length }}</span> send request{{ "s" if requests|length != 1 }}</span>
     <span class="chip">newest first</span>
+    {# Never a bare zero. Before the first successful check there is no result
+       to report, and saying so is the difference between "nobody replied" and
+       "the mailbox has not been read". #}
+    {% if cek_berhasil %}
+    <span class="chip">replies checked <span class="chip-angka">{{ cek_berhasil | datetime }}</span></span>
+    {% else %}
+    <span class="chip">replies never checked</span>
+    {% endif %}
   </p>
 </hgroup>
+
+{% if cek_terakhir and not cek_terakhir.ok %}
+<article class="peringatan">
+  <strong>The last reply check failed.</strong>
+  <span title="{{ cek_terakhir.error_msg }}">{{ cek_terakhir.error_msg | imap_error }}</span>
+  Nothing was read, so no absence of replies below should be read as an answer.
+</article>
+{% endif %}
+
+<div class="grid">
+  <div></div>
+  <div class="aksi-halaman">
+    <a href="/tracker/replies" role="button" class="secondary outline">Replies</a>
+    <form method="post" action="/tracker/replies/check">
+      <button type="submit">Check replies</button>
+    </form>
+  </div>
+</div>
 
 {# Newest first comes from db.list_requests() (ORDER BY r.id DESC); nothing is
    re-sorted here. #}

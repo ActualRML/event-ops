@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Reply from {{ balasan.from_nama or balasan.from_email }} — Vendor RFQ Blast{% endblock %}
+
+{% block content %}
+{% set label_tier = {1: "matched by thread", 2: "matched by code",
+                     3: "sender only", 4: "unmatched"} %}
+<hgroup>
+  <h2>{{ balasan.nama_pt or balasan.from_nama or balasan.from_email }}</h2>
+  <p class="chips">
+    <span class="chip">received <span class="chip-angka">{{ balasan.received_at }}</span></span>
+    {# The tier is history and never changes, including after this reply is
+       assigned by hand — that is what keeps a hand-assigned reply
+       distinguishable from one the ladder resolved. #}
+    <span class="chip">{{ label_tier.get(balasan.tier, "unknown") }}</span>
+    {% if balasan.auto_reply %}
+    <span class="chip">automatic — not counted</span>
+    {% endif %}
+    {% if balasan.judul_acara %}
+    <span class="chip">batch <span class="chip-angka">{{ balasan.judul_acara }}</span></span>
+    {% endif %}
+  </p>
+</hgroup>
+
+{% if balasan.auto_reply %}
+{# Not article.peringatan: nothing is wrong and nothing is blocked. This is a
+   plain statement of why the batch's count does not move for this row. #}
+<article>
+  <strong>This is an automatic reply.</strong>
+  The sending server marked it as generated rather than typed, so it is not
+  counted toward the vendors-replied total or the menu badge. It is kept and
+  shown because the vendor's system did answer — but nobody has yet.
+</article>
+{% endif %}
+
+{% if balasan.request_id is none and balasan.vendor_id is not none %}
+{# The one-click chooser. Only this vendor's own batches are offered: the
+   decision is which of THEIR conversations this answers, and listing batches
+   they were never written to turns a two-item choice into a scrolling list. #}
+<section>
+  <h3>Assign to a batch</h3>
+  {% if pilihan %}
+  <form method="post" action="/tracker/replies/{{ balasan.id }}/assign"
+        class="form-rapat form-vendor">
+    <label>
+      Batch
+      <select name="request_id">
+        {% for p in pilihan %}
+        <option value="{{ p.id }}">
+          {{ p.judul_acara }} · {{ p.kategori }}{% if p.kode %} · [RFQ-{{ p.kode }}]{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="baris-aksi">
+      <button type="submit">Assign</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="redup">
+    This vendor has not been written to on any batch, so there is nothing to
+    assign this reply to.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h3>Message</h3>
+  <dl class="konteks">
+    <dt>From</dt>
+    <dd>{% if balasan.from_nama %}{{ balasan.from_nama }} · {% endif %}{{ balasan.from_email }}</dd>
+    <dt>Subject</dt>
+    <dd>{{ balasan.subject }}</dd>
+  </dl>
+  {# Plain text, and no | safe anywhere near it. What is stored IS text —
+     an HTML-only reply was stripped at parse — so there is no markup left to
+     render even if someone wanted to. The app has no sanitiser, and putting a
+     stranger's markup in its own DOM is not a thing to start doing. #}
+  <pre class="pratinjau">{{ balasan.body }}</pre>
+</section>
+
+<section>
+  <h3>Attachments</h3>
+  {# The point of the whole feature: a quote is almost always a PDF, and the
+     body is often just "terlampir penawaran kami". #}
+  {% if lampiran %}
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 48%">
+      <col style="width: 20%">
+      <col style="width: 14%">
+      <col style="width: 18%">
+    </colgroup>
+    <thead>
+      <tr><th>File</th><th>Type</th><th class="angka">Size</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for l in lampiran %}
+      <tr>
+        <td class="sel-teks" title="{{ l.filename }}">{{ l.filename }}</td>
+        <td class="redup sel-teks">{{ l.content_type }}</td>
+        <td class="angka">{{ (l.size_bytes / 1024) | round | int }} KB</td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            <a href="/tracker/replies/{{ balasan.id }}/attachment/{{ l.id }}"
+               role="button" class="secondary outline btn-mini">Download</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="redup">No attachments on this reply.</p>
+  {% endif %}
+</section>
+
+<div class="baris-aksi-kanan">
+  <a href="/tracker/replies" role="button" class="secondary outline">All replies</a>
+  {% if balasan.request_id %}
+  <a href="/tracker/{{ balasan.request_id }}" role="button">Open the batch</a>
+  {% endif %}
+</div>
+{% endblock %}

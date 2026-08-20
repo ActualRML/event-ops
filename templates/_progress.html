@@ -44,17 +44,30 @@
 
   <progress value="{{ p.sent + p.failed }}" max="{{ p.total or 1 }}"></progress>
 
+  {# The question this whole page exists to answer. Counted in SQL by
+     db.progress, over DISTINCT vendors — a vendor who sends a quote and then
+     a revision has replied once. Shown only once the batch is done: mid-send
+     "0 of 8 have replied" is technically true and reads as a result. #}
+  {% if p.selesai and p.total %}
+  <p class="status-batch">
+    <strong>{{ p.replied }} of {{ p.total }}</strong>
+    vendor{{ "s" if p.total != 1 }} {{ "has" if p.replied == 1 else "have" }} replied.
+  </p>
+  {% endif %}
+
   <table class="tabel">
     <colgroup>
-      {# The SPK column takes its 16% off recipient, sent-at and reason — all
-         three truncate at any width, none of the remaining ones do. #}
-      <col style="width: 19%">
+      {# Re-cut for the Replies column: its 12% comes off recipient, sent-at
+         and the failure reason, all three of which truncate at any width.
+         Must total 100. #}
+      <col style="width: 18%">
+      <col style="width: 10%">
+      <col style="width: 14%">
+      <col style="width: 10%">
       <col style="width: 11%">
-      <col style="width: 17%">
-      <col style="width: 11%">
-      <col style="width: 13%">
-      <col style="width: 13%">
-      <col style="width: 16%">
+      <col style="width: 10%">
+      <col style="width: 12%">
+      <col style="width: 15%">
     </colgroup>
     <thead>
       <tr>
@@ -64,6 +77,7 @@
         <th>Status</th>
         <th>Sent at</th>
         <th>Failure reason</th>
+        <th>Replies</th>
         <th>SPK</th>
       </tr>
     </thead>
@@ -80,6 +94,33 @@
         <td class="error-sel">
           {% if r.error_msg %}
           <span title="{{ r.error_msg }}">{{ r.error_msg | error_message }}</span>
+          {% endif %}
+        </td>
+        {# Reply state is DERIVED, never written onto outbox.status. Writing
+           'replied' there would overwrite 'sent' and lose the delivery
+           outcome, and state is per reply rather than per vendor — a revised
+           quote has to read as new. The unread count is what the nav badge
+           counts, so the two always agree. #}
+        <td>
+          {% set balas = balasan.get(r.vendor_id, []) %}
+          {% if balas %}
+          {# Split by what the message IS, not by whether it was read. An
+             auto-reply is shown — the admin should see that the vendor's
+             server answered — but it is never dressed as an answer, and it is
+             absent from the count above and from the nav badge. #}
+          {% set asli = balas | rejectattr("auto_reply") | list %}
+          {% set belum = asli | selectattr("read_at", "none") | list | length %}
+          {% if asli %}
+          <a href="/tracker/replies/{{ asli[0].id }}"
+             class="badge badge-replied" title="newest reply {{ asli[0].received_at }}">
+            {% if belum %}{{ belum }} unread{% else %}Read{% endif %}</a>
+          {% if asli|length > 1 %}<div class="redup">{{ asli|length }} replies</div>{% endif %}
+          {% else %}
+          <a href="/tracker/replies/{{ balas[0].id }}"
+             class="badge badge-draft" title="automatic reply — not counted">auto</a>
+          {% endif %}
+          {% else %}
+          <span class="redup">—</span>
           {% endif %}
         </td>
         {# Offered on every row whatever the status: a vendor whose email
@@ -104,7 +145,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" class="kosong">
+        <td colspan="8" class="kosong">
           No outbox rows for this request yet.
         </td>
       </tr>

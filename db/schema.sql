@@ -210,6 +210,88 @@ CREATE TABLE sponsor_item (
     UNIQUE (sponsor_id, item_id)
 );
 
+-- One received vendor reply that got past the gate in replies.py.
+--
+-- message_id is the DEDUPE KEY, and load-bearing rather than defensive: IMAP
+-- SEARCH SINCE has date granularity only, so every check re-examines the whole
+-- day of the last successful run. UNIQUE is what makes that a no-op.
+--
+-- received_at is the SENDER's clock, from their Date header. It can be skewed,
+-- wrong, or earlier than the RFQ it answers — a badly-set clock, not
+-- corruption. created_at is our clock and is the tie-break when one is needed.
+--
+-- tier records HOW it matched and is never rewritten. Assigning a tier-3 reply
+-- by hand fills request_id and leaves tier at 3, which is why "needs assigning"
+-- is `tier = 3 AND request_id IS NULL` rather than a status that flips — the
+-- same reasoning as sponsor_item.zona_pct. All three FKs are nullable because
+-- the tiers resolve different amounts: 1 fills all three, 2 fills request_id
+-- and sometimes the rest, 3 fills vendor_id only, 4 fills none.
+CREATE TABLE inbox (
+    id          INTEGER PRIMARY KEY,
+    message_id  TEXT NOT NULL UNIQUE,
+    from_email  TEXT NOT NULL,
+    from_nama   TEXT,
+    subject     TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    tier        INTEGER NOT NULL CHECK (tier IN (1, 2, 3, 4)),
+    request_id  INTEGER REFERENCES requests(id) ON DELETE CASCADE,
+    outbox_id   INTEGER REFERENCES outbox(id) ON DELETE CASCADE,
+    vendor_id   INTEGER REFERENCES vendors(id),
+    read_at     TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    -- An out-of-office comes from the vendor's OWN address and usually carries
+    -- In-Reply-To, so it passes the gate and matches at tier 1 against the
+    -- exact outbox row — correctly, because it really is that vendor on that
+    -- thread. It must still not count toward "5 of 8 vendors have replied",
+    -- which is the whole point of the feature. A bounce never gets this far
+    -- (mailer-daemon is not a vendor); an auto-reply IS the vendor, so the
+    -- gate cannot be what stops it.
+    --
+    -- Set from headers only — Auto-Submitted (RFC 3834), X-Autoreply /
+    -- X-Autorespond, Precedence — never from the subject line, which would be
+    -- localised guesswork against Indonesian mail servers.
+    --
+    -- Recorded, not filtered: stored and displayed like any other reply, and
+    -- left out of the count and the badge. Same shape as tier — store what it
+    -- is, let the display decide. Appended, like every migrated column.
+    auto_reply  INTEGER NOT NULL DEFAULT 0 CHECK (auto_reply IN (0, 1))
+);
+
+-- One file attached to a reply. The BYTES are on the filesystem under
+-- attachments/, not here — which is why db/rfq.db alone is no longer a
+-- complete backup. See CLAUDE.md.
+--
+-- filename is the vendor's, for display and Content-Disposition. stored_name
+-- is ours, and that split is the guarantee: the attacker-controlled string
+-- never touches a path, so traversal is unreachable rather than defended.
+CREATE TABLE inbox_attachment (
+    id           INTEGER PRIMARY KEY,
+    inbox_id     INTEGER NOT NULL REFERENCES inbox(id) ON DELETE CASCADE,
+    filename     TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size_bytes   INTEGER NOT NULL CHECK (size_bytes >= 0),
+    stored_name  TEXT NOT NULL UNIQUE
+);
+
+-- One row per check run: a log, not a settings row, because it answers three
+-- questions at once with no session to hold them — where to resume, when the
+-- last check was, and what went wrong on it.
+--
+-- The watermark is MAX(started_at) WHERE ok = 1. A FAILED RUN MUST NOT ADVANCE
+-- IT: that is the difference between "the check errored" and "the check
+-- quietly skipped a day". No rows means never checked, which the UI says out
+-- loud rather than rendering as zero. error_msg is the raw exception string,
+-- translated on display like outbox.error_msg.
+CREATE TABLE inbox_check (
+    id         INTEGER PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    ok         INTEGER NOT NULL CHECK (ok IN (0, 1)),
+    error_msg  TEXT,
+    examined   INTEGER NOT NULL DEFAULT 0,
+    kept       INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX idx_vendor_categories_category ON vendor_categories(category_id);
 CREATE INDEX idx_requests_event ON requests(event_id);
 -- UNIQUE, not a plain index: this is requests.kode's constraint, which
@@ -221,6 +303,10 @@ CREATE INDEX idx_vendors_aktif ON vendors(aktif);
 CREATE INDEX idx_spk_request ON spk(request_id);
 CREATE INDEX idx_sponsors_event ON sponsors(event_id);
 CREATE INDEX idx_sponsor_item_sponsor ON sponsor_item(sponsor_id);
+CREATE INDEX idx_inbox_request ON inbox(request_id);
+CREATE INDEX idx_inbox_outbox ON inbox(outbox_id);
+CREATE INDEX idx_inbox_tier ON inbox(tier);
+CREATE INDEX idx_inbox_attachment_inbox ON inbox_attachment(inbox_id);
 
 -- One row per vendor; categories flattened into a single display string.
 -- Vendors with no category still appear, with kategori NULL.

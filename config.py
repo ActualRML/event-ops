@@ -57,6 +57,40 @@ IMAP_FOLDER = os.getenv("IMAP_FOLDER", "INBOX")
 IMAP_USER = os.getenv("IMAP_USER", "") or SMTP_USER
 IMAP_PASS = os.getenv("IMAP_PASS", "") or SMTP_PASS
 
+# Most messages examined in one check. The button is synchronous, so this is
+# what stops a mailbox with a long history behind the watermark from turning
+# one click into a minute of waiting.
+IMAP_MAX = _get_int("IMAP_MAX", 200)
+
+# Socket timeout. A hung connection has to become a visible failure rather
+# than a page that never returns.
+IMAP_TIMEOUT = _get_int("IMAP_TIMEOUT", 20)
+
+# Where attachment bytes go. NOT in the database: one 4 MB quote PDF per reply
+# would take the demo db from ~200 KB to tens of MB and every VACUUM INTO
+# backup would copy them again, and db.py's habit of SELECT * would pull
+# megabytes into a list page by accident.
+#
+# The cost, and it is written down in CLAUDE.md rather than left implicit:
+# db/rfq.db on its own is no longer a complete backup. Copy this directory
+# alongside it.
+ATTACHMENT_DIR = os.getenv("ATTACHMENT_DIR", "attachments")
+
+# Per-file and per-message caps. Anything over is skipped and counted, never
+# silently dropped — a vendor whose 40 MB scan did not save should be able to
+# find out why.
+ATTACHMENT_MAX_BYTES = _get_int("ATTACHMENT_MAX_BYTES", 10 * 1024 * 1024)
+ATTACHMENT_MAX_TOTAL = _get_int("ATTACHMENT_MAX_TOTAL", 25 * 1024 * 1024)
+
+# Extensions we are willing to put on disk. The stored name is built from ids
+# plus one of these; anything else lands as .bin. This is not about trusting
+# the vendor's filename — that string never reaches a path — it is so a saved
+# file opens in the right application.
+ATTACHMENT_EXT = {
+    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ".xlsx", ".xls", ".csv", ".docx", ".doc", ".zip", ".rar", ".txt",
+}
+
 DRY_RUN = _get_bool("DRY_RUN", True)
 SEND_DELAY_SECONDS = _get_int("SEND_DELAY_SECONDS", 2)
 

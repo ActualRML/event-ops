@@ -420,5 +420,8 @@ async def send_progress(request: Request, request_id: int):
             # The poll swaps the whole table, so the SPK column has to come
             # with it — otherwise the last swap of a batch wipes the actions.
             "spk": db.spk_by_vendor(request_id),
+            # And the Replies column, for exactly the same reason. Anything
+            # _progress.html renders has to be in BOTH of its contexts.
+            "balasan": db.replies_by_vendor(request_id),
         },
     )

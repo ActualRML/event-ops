@@ -518,7 +518,12 @@ def mark_failed(outbox_id: int, error_msg: str) -> None:
 
 
 def progress(request_id: int) -> dict:
-    """Counted in SQL every time. Never derived from in-flight state."""
+    """Counted in SQL every time. Never derived from in-flight state.
+
+    `replied` counts VENDORS, not replies: a vendor who sends a quote and then
+    a revision has replied once for the purpose of "5 of 8 vendors have
+    replied". Both callers of _progress.html already call this, so the summary
+    line costs neither of them a new context key."""
     with closing(get_conn()) as conn:
         row = conn.execute(
             """SELECT COUNT(*) AS total,
@@ -528,12 +533,24 @@ def progress(request_id: int) -> dict:
                  FROM outbox WHERE request_id = ?""",
             (request_id,),
         ).fetchone()
+        # auto_reply = 0 is what keeps an out-of-office from counting as an
+        # answer. It arrives from the vendor's own address and matches the
+        # exact outbox row, so nothing earlier in the pipeline can exclude it —
+        # this count is the right place, because the row is still worth
+        # storing and showing.
+        balas = conn.execute(
+            """SELECT COUNT(DISTINCT vendor_id) AS n FROM inbox
+                WHERE request_id = ? AND vendor_id IS NOT NULL
+                  AND auto_reply = 0""",
+            (request_id,),
+        ).fetchone()
 
     return {
         "total": row["total"],
         "sent": row["sent"],
         "failed": row["failed"],
         "draft": row["draft"],
+        "replied": balas["n"],
         "selesai": row["total"] > 0 and row["draft"] == 0,
     }
 
@@ -1187,6 +1204,334 @@ def sponsor_totals(sponsor_id: int) -> dict:
 
     return {"baris": row["baris"], "cost_pakai": row["cost_pakai"],
             "value_total": row["value_total"]}
+
+
+# ---------------------------------------------------------------------------
+# Replies. Everything below reads or writes inbox, inbox_attachment or
+# inbox_check.
+# ---------------------------------------------------------------------------
+
+
+def last_check() -> sqlite3.Row | None:
+    """The most recent check run, successful or not, or None if none ever ran.
+
+    None means NEVER CHECKED, and the interface has to say that rather than
+    render a zero — "nobody replied" and "the check has not run" look identical
+    otherwise, and only one of them is worth acting on."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM inbox_check ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+
+def watermark() -> str | None:
+    """Where the next check resumes from: the start of the last SUCCESSFUL run.
+
+    Successful only. A failed run must not advance the watermark, or the day it
+    failed on is skipped forever and the failure turns into silent data loss
+    instead of a banner."""
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            "SELECT MAX(started_at) AS m FROM inbox_check WHERE ok = 1"
+        ).fetchone()
+    return row["m"] if row and row["m"] else None
+
+
+def record_check(started_at: str, ok: bool, error_msg: str | None,
+                 examined: int, kept: int) -> int:
+    """Log one check run. error_msg is the RAW exception string — translation
+    happens on display, so reworded messages need no migration."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            """INSERT INTO inbox_check (started_at, ok, error_msg, examined, kept)
+               VALUES (?, ?, ?, ?, ?)""",
+            (started_at, 1 if ok else 0, error_msg, examined, kept),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def vendor_emails() -> dict:
+    """{normalised email: vendor_id} for the gate.
+
+    Every vendor, not only active ones: an archived vendor answering an RFQ
+    that went out before they were archived is still a real reply, and dropping
+    it at the door would be silent. Lowercased here so the gate compares like
+    with like — the column is typed by hand and inconsistently cased.
+
+    Later duplicates lose. Two vendors sharing an address is a data problem the
+    reply check should not try to adjudicate; it attributes to the first."""
+    with closing(get_conn()) as conn:
+        rows = conn.execute(
+            "SELECT id, email FROM vendors WHERE email <> '' ORDER BY id"
+        ).fetchall()
+    hasil: dict[str, int] = {}
+    for r in rows:
+        kunci = (r["email"] or "").strip().lower()
+        if kunci and kunci not in hasil:
+            hasil[kunci] = r["id"]
+    return hasil
+
+
+def outbox_by_message_id(message_ids) -> sqlite3.Row | None:
+    """The outbox row one of these Message-IDs was sent as, or None. Tier 1.
+
+    The ids come from a reply's In-Reply-To and References, in that order, and
+    the first hit wins — In-Reply-To is the direct parent.
+
+    `message_id LIKE '<%>'` excludes the four legacy rows that stored the
+    literal string "dry-run" before every send minted its own id. Without it
+    one lookup would match all of them at once. Nothing repairs those rows:
+    they are history, and no reply can arrive against a mail never sent."""
+    ids = [m for m in (message_ids or []) if m]
+    if not ids:
+        return None
+    with closing(get_conn()) as conn:
+        for m in ids:
+            row = conn.execute(
+                """SELECT o.*, r.kode
+                     FROM outbox o
+                     JOIN requests r ON r.id = o.request_id
+                    WHERE o.message_id = ? AND o.message_id LIKE '<%>'""",
+                (m,),
+            ).fetchone()
+            if row is not None:
+                return row
+    return None
+
+
+def outbox_row_for(request_id: int, vendor_id: int) -> sqlite3.Row | None:
+    """One vendor's row in one batch, or None. Tier 2's second half: the code
+    names the batch, and this is what turns that into a per-vendor match."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM outbox WHERE request_id = ? AND vendor_id = ?",
+            (request_id, vendor_id),
+        ).fetchone()
+
+
+def inbox_exists(message_id: str) -> bool:
+    """Have we already stored this message? The UNIQUE on inbox.message_id is
+    the real guard; this lets the check skip the parse and the attachment
+    writes for a message it has seen, which is most of them on every run."""
+    if not message_id:
+        return False
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT 1 FROM inbox WHERE message_id = ?", (message_id,)
+        ).fetchone() is not None
+
+
+def create_inbox(pesan: dict, tier: int, request_id: int | None,
+                 outbox_id: int | None, vendor_id: int | None) -> int | None:
+    """Store one matched reply. Returns the new id, or None if it was already
+    stored — a duplicate is the expected case, not an error, because every
+    check re-reads the whole day of the last one."""
+    with closing(get_conn()) as conn:
+        try:
+            cur = conn.execute(
+                """INSERT INTO inbox (message_id, from_email, from_nama, subject,
+                                      received_at, body, tier,
+                                      request_id, outbox_id, vendor_id,
+                                      auto_reply)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (pesan["message_id"], pesan["from_email"], pesan["from_nama"],
+                 pesan["subject"], pesan["received_at"], pesan["body"], tier,
+                 request_id, outbox_id, vendor_id,
+                 1 if pesan.get("otomatis") else 0),
+            )
+            conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+
+def create_inbox_attachment(inbox_id: int, filename: str, content_type: str,
+                            size_bytes: int, stored_name: str) -> int:
+    """Record one saved attachment. The bytes are already on disk; this is the
+    row that makes them findable."""
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            """INSERT INTO inbox_attachment
+                      (inbox_id, filename, content_type, size_bytes, stored_name)
+               VALUES (?, ?, ?, ?, ?)""",
+            (inbox_id, filename, content_type, size_bytes, stored_name),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def count_needs_attention() -> int:
+    """The nav badge: incoming mail not yet dealt with.
+
+    Two populations, and the difference matters. An ATTACHED reply counts until
+    it is read. An UNASSIGNED one counts until it is assigned, read or not,
+    because reading it does not put it anywhere.
+
+    Tier 4 is excluded on purpose. Unmatched mail is not "not yet dealt with",
+    it is mail we could not place, and a number that never goes down stops
+    being read at all.
+
+    Auto-replies are excluded for a different reason: an out-of-office is not
+    something anyone has to act on. Counting it would put a number on the nav
+    that means "a mail server answered", which trains people to ignore the
+    badge — and a badge that gets ignored is worse than no badge."""
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS n FROM inbox
+                WHERE auto_reply = 0
+                  AND ((tier IN (1, 2) AND read_at IS NULL)
+                       OR (tier = 3 AND request_id IS NULL))"""
+        ).fetchone()
+    return row["n"]
+
+
+def replies_by_vendor(request_id: int) -> dict:
+    """{vendor_id: [reply rows]} for one batch's outbox table, newest first.
+
+    Keyed by vendor rather than by outbox row so a reply attached to the batch
+    but not to a specific row is still reachable — tier 2 without a sender
+    match resolves the batch only."""
+    with closing(get_conn()) as conn:
+        rows = conn.execute(
+            """SELECT * FROM inbox
+                WHERE request_id = ? AND vendor_id IS NOT NULL
+                ORDER BY received_at DESC, id DESC""",
+            (request_id,),
+        ).fetchall()
+    hasil: dict[int, list] = {}
+    for r in rows:
+        hasil.setdefault(r["vendor_id"], []).append(r)
+    return hasil
+
+
+def get_reply(reply_id: int) -> sqlite3.Row | None:
+    """One reply with the names its page needs, or None."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT i.*, v.nama_pt, e.judul_acara, c.nama AS kategori
+                 FROM inbox i
+                 LEFT JOIN vendors v ON v.id = i.vendor_id
+                 LEFT JOIN requests r ON r.id = i.request_id
+                 LEFT JOIN events e ON e.id = r.event_id
+                 LEFT JOIN categories c ON c.id = r.category_id
+                WHERE i.id = ?""",
+            (reply_id,),
+        ).fetchone()
+
+
+def list_attachments(reply_id: int) -> list[sqlite3.Row]:
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM inbox_attachment WHERE inbox_id = ? ORDER BY id",
+            (reply_id,),
+        ).fetchall()
+
+
+def get_attachment(attachment_id: int) -> sqlite3.Row | None:
+    """One attachment row, carrying its inbox_id so a route can check the file
+    actually belongs to the reply in its own URL."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM inbox_attachment WHERE id = ?", (attachment_id,)
+        ).fetchone()
+
+
+def mark_reply_read(reply_id: int) -> None:
+    """Stamp read_at, once. The `read_at IS NULL` guard keeps the FIRST time it
+    was opened rather than overwriting with the most recent — when it was seen
+    is the useful fact, not when it was last looked at."""
+    with closing(get_conn()) as conn:
+        conn.execute(
+            """UPDATE inbox SET read_at = datetime('now', 'localtime')
+                WHERE id = ? AND read_at IS NULL""",
+            (reply_id,),
+        )
+        conn.commit()
+
+
+def assign_reply(reply_id: int, request_id: int) -> bool:
+    """Attach a held reply to a batch by hand. Returns True when it moved.
+
+    tier IS NOT IN THE SET LIST, and that is the rule rather than an oversight.
+    tier records how the message was matched, which is history: a reply that
+    could only be matched by sender stays a tier 3 forever, and "needs
+    assigning" is `tier = 3 AND request_id IS NULL` rather than a status that
+    flips. Without that, a hand-assigned reply is indistinguishable from one
+    the ladder resolved, and the honest answer looks like a bug.
+
+    outbox_id is filled in the same statement when the vendor is actually in
+    the chosen batch, so the reply lands on the right row of the outbox table
+    rather than only on the batch."""
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        baris = conn.execute(
+            "SELECT vendor_id, request_id FROM inbox WHERE id = ?", (reply_id,)
+        ).fetchone()
+        if baris is None or baris["request_id"] is not None:
+            # Already assigned, or gone. Not an error — two clicks on the same
+            # chooser is the ordinary way this happens.
+            conn.commit()
+            return False
+
+        kotak = conn.execute(
+            "SELECT id FROM outbox WHERE request_id = ? AND vendor_id = ?",
+            (request_id, baris["vendor_id"]),
+        ).fetchone()
+
+        cur = conn.execute(
+            "UPDATE inbox SET request_id = ?, outbox_id = ? WHERE id = ?",
+            (request_id, kotak["id"] if kotak else None, reply_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def list_unassigned() -> list[sqlite3.Row]:
+    """Replies held for a human decision: matched to a vendor and nothing else.
+
+    Tier 3 never attaches on its own, and that is the whole point — one vendor
+    working two concurrent events cannot be told apart by their address, and
+    concurrent events are normal here."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT i.*, v.nama_pt
+                 FROM inbox i
+                 LEFT JOIN vendors v ON v.id = i.vendor_id
+                WHERE i.tier = 3 AND i.request_id IS NULL
+                ORDER BY i.received_at DESC, i.id DESC"""
+        ).fetchall()
+
+
+def list_unmatched() -> list[sqlite3.Row]:
+    """Replies that got past the gate and resolved to nothing: a well-formed
+    code naming no batch, from an address that is not a vendor. Read-only —
+    there is nothing to choose from, so there is no chooser."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT * FROM inbox WHERE tier = 4 ORDER BY received_at DESC, id DESC"
+        ).fetchall()
+
+
+def batches_for_vendor(vendor_id: int) -> list[sqlite3.Row]:
+    """The batches this vendor was actually written to, newest first — the
+    options the one-click chooser offers.
+
+    Restricted to batches containing that vendor rather than every batch: the
+    chooser exists to resolve which of a vendor's own conversations a reply
+    belongs to, and offering batches they were never sent turns a two-item
+    decision into a scrolling list."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT r.id, r.kode, r.created_at, e.judul_acara,
+                      e.tanggal_acara, c.nama AS kategori
+                 FROM requests r
+                 JOIN outbox o ON o.request_id = r.id AND o.vendor_id = ?
+                 JOIN events e ON e.id = r.event_id
+                 JOIN categories c ON c.id = r.category_id
+                ORDER BY r.id DESC""",
+            (vendor_id,),
+        ).fetchall()
 
 
 def set_vendor_categories(vendor_id: int, category_ids) -> None:

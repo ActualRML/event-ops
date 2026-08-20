@@ -8,9 +8,11 @@ from datetime import date
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+import db
 from core import dokumen, renderer, tampilan
 from deps import templates
-from routes import events, items, rundown, send, spk, sponsors, tracker, vendors
+from routes import (events, items, replies, rundown, send, spk, sponsors,
+                    tracker, vendors)
 
 app = FastAPI(title="Vendor RFQ Blast")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -22,6 +24,8 @@ templates.env.filters["date"] = tampilan.format_date
 templates.env.filters["datetime"] = tampilan.format_datetime
 # Raw SMTP exceptions are unreadable for the procurement staff who use this.
 templates.env.filters["error_message"] = tampilan.pesan_error
+# The same for raw imaplib exceptions on a failed reply check.
+templates.env.filters["imap_error"] = tampilan.pesan_imap
 # Rundown durations and totals, stored as plain minutes.
 templates.env.filters["duration"] = tampilan.format_durasi
 # The Indonesian pair, for the printed rundown only — it is carried on site by
@@ -36,6 +40,15 @@ templates.env.filters["durasi"] = renderer.format_durasi
 templates.env.filters["rupiah"] = dokumen.format_rupiah
 # Footer year. Read at startup — a demo restarts far more often than a year turns.
 templates.env.globals["tahun"] = date.today().year
+# The nav badge, as a CALLABLE rather than a value: base.html renders on every
+# page, so the count has to be read per request, not once at startup. Wired
+# here rather than added to twenty handler contexts, which would drift the
+# first time someone adds a page and forgets it.
+#
+# This is why main.py imports db. It adds no edge that is not already there —
+# main imports every router and every router imports db — and nothing imports
+# main, so no cycle is reachable.
+templates.env.globals["perlu_perhatian"] = db.count_needs_attention
 
 # Include order reproduces the original registration order. No prefixes: the
 # routers carry their own full paths, so every URL resolves as it did before.
@@ -46,6 +59,11 @@ app.include_router(sponsors.router)
 # do not overlap, so include order between the two does not matter.
 app.include_router(events.router)
 app.include_router(send.router)
+# BEFORE tracker, and this is load-bearing: tracker owns /tracker/{request_id},
+# which matches any single segment, so "replies" would be captured as a
+# request_id and 422 on int conversion. A path parameter that fails validation
+# does not fall through to the next route.
+app.include_router(replies.router)
 app.include_router(tracker.router)
 app.include_router(spk.router)
 app.include_router(rundown.router)
