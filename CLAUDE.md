@@ -390,10 +390,19 @@ inbox_check(id PK, started_at NOT NULL, ok CHECK(ok IN (0,1)), error_msg,
             examined DEFAULT 0, kept DEFAULT 0)
 
 Indexes: idx_vendor_categories_category, idx_requests_event,
-idx_requests_kode (UNIQUE), idx_inbox_request, idx_inbox_outbox,
+idx_requests_kode (UNIQUE), idx_inbox_request,
 idx_inbox_tier, idx_inbox_attachment_inbox,
 idx_outbox_request, idx_outbox_status, idx_vendors_aktif, idx_spk_request,
 idx_sponsors_event, idx_sponsor_item_sponsor.
+
+There was an idx_inbox_outbox on inbox(outbox_id) and it is gone: the column
+is written and never searched, so no query could use it. Two of the twelve
+above are not chosen by the planner either — idx_requests_event and
+idx_vendors_aktif — but those have real queries behind them (`list_events`
+joins on the first, four queries filter `aktif = 1` for the second) and are
+only skipped because six requests and twenty-five vendors are faster to scan.
+"The planner ignores it at demo size" and "nothing would ever use it" are
+different findings; only the second is a reason to delete.
 
 ### Domain boundary — categories and items are not linked
 

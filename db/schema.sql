@@ -304,7 +304,6 @@ CREATE INDEX idx_spk_request ON spk(request_id);
 CREATE INDEX idx_sponsors_event ON sponsors(event_id);
 CREATE INDEX idx_sponsor_item_sponsor ON sponsor_item(sponsor_id);
 CREATE INDEX idx_inbox_request ON inbox(request_id);
-CREATE INDEX idx_inbox_outbox ON inbox(outbox_id);
 CREATE INDEX idx_inbox_tier ON inbox(tier);
 CREATE INDEX idx_inbox_attachment_inbox ON inbox_attachment(inbox_id);
 

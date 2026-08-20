@@ -581,16 +581,6 @@ def list_requests() -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def list_requests_for_event(event_id: int) -> list[sqlite3.Row]:
-    """Every batch belonging to one event, oldest first — the order they
-    actually went out in."""
-    with closing(get_conn()) as conn:
-        return conn.execute(
-            SQL_REQUEST_WITH_EVENT + " WHERE r.event_id = ? ORDER BY r.id",
-            (event_id,),
-        ).fetchall()
-
-
 def request_detail(request_id: int) -> sqlite3.Row | None:
     """One batch, templates included, with its event's fields grafted on so
     the row can go straight to core.renderer or core.dokumen."""
