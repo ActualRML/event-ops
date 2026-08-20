@@ -138,9 +138,18 @@ INSERT INTO events (id, judul_acara, tanggal_acara, lokasi, created_at, zona) VA
 -- Batch 1 carries the full templates; the rest read them back out rather than
 -- repeating thirty lines of email five more times. Every batch stores its own
 -- copy, which is what the app does on a real send.
+-- Every seeded batch carries a kode. NULL is the right value for rows MIGRATED
+-- by 002_kode.sql — those really did go out before codes existed — but it is
+-- the wrong value for a fresh seed: without one, no seeded subject carries an
+-- [RFQ-xxxx] marker, and tier 2 of the reply ladder has nothing to match on.
+-- Half the reply feature would be undemonstrable on a fresh build.
+--
+-- Fixed literals rather than anything generated, because they appear in the
+-- seeded outbox subjects and in the seeded inbox rows below, and all three
+-- have to agree.
 INSERT INTO requests
     (id, event_id, category_id, kebutuhan, deadline, pengirim_nama,
-     created_at, subject_template, body_template)
+     created_at, subject_template, body_template, kode)
 VALUES (
     1, 1, 1,
     'Tenda roder untuk area utama, kapasitas 800 tamu, outdoor. Loading in H-1 mulai pukul 08.00.',
@@ -181,65 +190,66 @@ Hormat kami,
 
 {{ pengirim_nama }}
 Divisi Procurement
-');
+',
+    '7A3F');
 
 -- Event 1, round two: lighting.
 INSERT INTO requests
     (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
-     subject_template, body_template)
+     subject_template, body_template, kode)
 SELECT 2, 1, 4,
        'Lighting panggung utama dan area tamu, acara malam hari sampai pukul 22.00 WIB.',
        date('now', 'localtime', '-52 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-55 days') || ' 10:26:33',
-       subject_template, body_template
+       subject_template, body_template, 'C1B8'
 FROM requests WHERE id = 1;
 
 -- Event 1, round three: catering, once the headcount was final.
 INSERT INTO requests
     (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
-     subject_template, body_template)
+     subject_template, body_template, kode)
 SELECT 3, 1, 5,
        'Konsumsi prasmanan 800 pax, tiga menu utama dan dua gubugan, termasuk pramusaji.',
        date('now', 'localtime', '-48 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-51 days') || ' 09:40:12',
-       subject_template, body_template
+       subject_template, body_template, '4E2D'
 FROM requests WHERE id = 1;
 
 INSERT INTO requests
     (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
-     subject_template, body_template)
+     subject_template, body_template, kode)
 SELECT 4, 2, 2,
        'Sound system indoor untuk 600 tamu, akad pukul 09.00 dan resepsi pukul 19.00 WIB.',
        date('now', 'localtime', '-35 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-38 days') || ' 14:05:19',
-       subject_template, body_template
+       subject_template, body_template, 'B905'
 FROM requests WHERE id = 1;
 
 INSERT INTO requests
     (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
-     subject_template, body_template)
+     subject_template, body_template, kode)
 SELECT 5, 3, 3,
        'Pendingin ruangan tambahan untuk ballroom, 250 tamu undangan dan media.',
        date('now', 'localtime', '-2 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-12 days') || ' 11:38:07',
-       subject_template, body_template
+       subject_template, body_template, 'D6A1'
 FROM requests WHERE id = 1;
 
 -- Still being quoted: no outbox rows at all, so the tracker shows a batch that
 -- has not been dispatched next to five that have.
 INSERT INTO requests
     (id, event_id, category_id, kebutuhan, deadline, pengirim_nama, created_at,
-     subject_template, body_template)
+     subject_template, body_template, kode)
 SELECT 6, 4, 6,
        'Genset silent untuk cadangan daya seminar 400 peserta, sehari penuh.',
        date('now', 'localtime', '+21 days'),
        'Ronald Lilipaly',
        date('now', 'localtime', '-3 days') || ' 16:22:51',
-       subject_template, body_template
+       subject_template, body_template, '2F74'
 FROM requests WHERE id = 1;
 
 -- Subjects name the batch's category, not the vendor's own list — a vendor in
@@ -251,7 +261,8 @@ INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, message_id,
      sent_at, created_at)
 SELECT 1, v.id, v.email,
-       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt
+         || ' (' || e.judul_acara || ') [RFQ-' || r.kode || ']',
        'sent',
        '<CAF' || printf('%015d', v.id * 1000003 + 1) || '@mail.gmail.com>',
        date('now', 'localtime', '-58 days')
@@ -269,7 +280,8 @@ INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, error_msg, message_id,
      sent_at, created_at)
 SELECT 2, v.id, v.email,
-       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt
+         || ' (' || e.judul_acara || ') [RFQ-' || r.kode || ']',
        CASE WHEN v.id = 15 THEN 'failed' ELSE 'sent' END,
        CASE WHEN v.id = 15
             THEN 'SMTPRecipientsRefused: (553, ''5.1.3 The recipient address <'
@@ -291,7 +303,8 @@ INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, error_msg, message_id,
      sent_at, created_at)
 SELECT 3, v.id, v.email,
-       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt
+         || ' (' || e.judul_acara || ') [RFQ-' || r.kode || ']',
        CASE WHEN v.id = 19 THEN 'failed' ELSE 'sent' END,
        CASE WHEN v.id = 19
             THEN 'SMTPRecipientsRefused: (553, ''5.1.3 The recipient address <'
@@ -313,7 +326,8 @@ INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, message_id,
      sent_at, created_at)
 SELECT 4, v.id, v.email,
-       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt
+         || ' (' || e.judul_acara || ') [RFQ-' || r.kode || ']',
        'sent',
        '<CAF' || printf('%015d', v.id * 1000003 + 4) || '@mail.gmail.com>',
        date('now', 'localtime', '-37 days')
@@ -330,7 +344,8 @@ INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, message_id,
      sent_at, created_at)
 SELECT 5, v.id, v.email,
-       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt || ' (' || e.judul_acara || ')',
+       'Permintaan Penawaran ' || c.nama || ' - ' || v.nama_pt
+         || ' (' || e.judul_acara || ') [RFQ-' || r.kode || ']',
        'sent',
        '<CAF' || printf('%015d', v.id * 1000003 + 5) || '@mail.gmail.com>',
        date('now', 'localtime', '-11 days')
@@ -341,6 +356,106 @@ JOIN requests r ON r.id = 5
 JOIN events e ON e.id = r.event_id
 JOIN categories c ON c.id = r.category_id
 WHERE v.id IN (9, 10, 12);
+
+-- Three replies, all against batch 4 (event 2, Sound System, three vendors),
+-- so one batch shows every state the feature can be in at once. Same reasoning
+-- as the deliberately over-budget sponsor and the two typo'd email addresses:
+-- the interesting states have to be visible on first load, or nobody
+-- demonstrating this finds them.
+--
+-- Batch 4 therefore reads "1 of 3 vendors have replied", and that number is
+-- the whole point — it is only right because the auto-reply below is excluded.
+-- If a change ever makes it read 2 of 3, that exclusion has broken.
+--
+--   vendor 5  tier 1, a real quote      -> counted, unread
+--   vendor 6  tier 1, an out-of-office  -> stored, shown, NOT counted
+--   vendor 7  tier 3, sender only       -> held for assignment, not attached
+--
+-- No inbox_attachment rows. Attachment BYTES live on the filesystem under
+-- attachments/, and seed.sql cannot write files — a seeded row would promise a
+-- download that 404s, which is worse than showing none. The attachment path is
+-- exercised by a real check, not by the seed.
+--
+-- message_id here is the INCOMING message's own id, from the vendor's server,
+-- which is why these do not look like the '<CAF...@mail.gmail.com>' ids in
+-- outbox: those are ours.
+
+-- Tier 1. Answers the exact outbox row, matched through In-Reply-To, and is
+-- what a real quote looks like: a short body and the numbers in an attachment.
+INSERT INTO inbox
+    (message_id, from_email, from_nama, subject, received_at, body, tier,
+     request_id, outbox_id, vendor_id, read_at, auto_reply, created_at)
+SELECT '<20260715.9f2a41@mail.gemasuara.co.id>',
+       v.email, v.pic_nama,
+       'Re: ' || o.subject,
+       date('now', 'localtime', '-36 days') || ' 14:22:10',
+       'Kepada Yth. Bapak Ronald,' || char(10) || char(10) ||
+       'Terima kasih atas undangan penawaran untuk acara resepsi tersebut.' || char(10) ||
+       'Terlampir penawaran kami untuk sound system indoor 600 tamu, sudah' || char(10) ||
+       'termasuk operator dan instalasi di lokasi. Harga belum termasuk PPN.' || char(10) || char(10) ||
+       'Penawaran berlaku 14 hari. Mohon konfirmasi jika ada yang perlu' || char(10) ||
+       'didiskusikan lebih dahulu.' || char(10) || char(10) ||
+       'Hormat kami,' || char(10) || v.pic_nama || char(10) || v.nama_pt,
+       1, 4, o.id, v.id,
+       NULL,   -- unread, so the drawer badge has something to show
+       0,
+       date('now', 'localtime', '-36 days') || ' 14:25:03'
+FROM outbox o JOIN vendors v ON v.id = o.vendor_id
+WHERE o.request_id = 4 AND o.vendor_id = 5;
+
+-- Tier 1 as well, and that is the point: an out-of-office comes from the
+-- vendor's OWN address and carries In-Reply-To, so it matches the exact outbox
+-- row and nothing in the gate or the ladder can tell it apart. Only the
+-- Auto-Submitted header can, which is why auto_reply exists as a column.
+INSERT INTO inbox
+    (message_id, from_email, from_nama, subject, received_at, body, tier,
+     request_id, outbox_id, vendor_id, read_at, auto_reply, created_at)
+SELECT '<autoreply-20260715-8812@audioprima.co.id>',
+       v.email, v.pic_nama,
+       'Automatic reply: ' || o.subject,
+       date('now', 'localtime', '-36 days') || ' 09:03:47',
+       'Terima kasih atas email Anda.' || char(10) || char(10) ||
+       'Saat ini saya sedang cuti dan akan kembali pada tanggal 20.' || char(10) ||
+       'Email Anda akan saya balas setelah kembali bertugas. Untuk hal' || char(10) ||
+       'mendesak silakan hubungi bagian operasional.' || char(10) || char(10) ||
+       'Hormat kami,' || char(10) || v.pic_nama,
+       1, 4, o.id, v.id,
+       NULL,   -- unread AND uncounted: proves the badge excludes it too
+       1,
+       date('now', 'localtime', '-36 days') || ' 09:03:52'
+FROM outbox o JOIN vendors v ON v.id = o.vendor_id
+WHERE o.request_id = 4 AND o.vendor_id = 6;
+
+-- Tier 3: a fresh message rather than a reply, so no In-Reply-To and no code
+-- in the subject. The sender is a known vendor and that is ALL we know, so it
+-- is held rather than attached — the case the whole tier exists for. Assigning
+-- it from the Replies page moves batch 4 to "2 of 3".
+INSERT INTO inbox
+    (message_id, from_email, from_nama, subject, received_at, body, tier,
+     request_id, outbox_id, vendor_id, read_at, auto_reply, created_at)
+SELECT '<CAF-nadarezeki-20260716-4471@mail.gmail.com>',
+       v.email, v.pic_nama,
+       'Penawaran sound system',
+       date('now', 'localtime', '-35 days') || ' 11:48:29',
+       'Selamat siang Pak Ronald,' || char(10) || char(10) ||
+       'Menindaklanjuti pembicaraan kita via telepon kemarin, berikut kami' || char(10) ||
+       'sampaikan penawaran untuk kebutuhan sound system. Mohon dicek dan' || char(10) ||
+       'kami tunggu kabarnya.' || char(10) || char(10) ||
+       'Terima kasih,' || char(10) || v.pic_nama || char(10) || v.nama_pt,
+       3,
+       NULL,   -- NEVER attached by the ladder: one vendor can be on two
+       NULL,   -- concurrent events and an address cannot tell them apart
+       v.id,
+       NULL, 0,
+       date('now', 'localtime', '-35 days') || ' 11:50:14'
+FROM vendors v WHERE v.id = 7;
+
+-- One successful check on record, so the Tracker and Replies pages show a
+-- "last checked" time rather than "never checked" on first load. Without this
+-- a fresh demo cannot tell the two apart, which is the exact confusion the
+-- inbox_check table exists to prevent.
+INSERT INTO inbox_check (started_at, ok, error_msg, examined, kept)
+VALUES (date('now', 'localtime', '-35 days') || ' 12:00:00', 1, NULL, 12, 3);
 
 -- Three work orders, each from a different batch and so a different category:
 -- tenda and catering out of event 1's first and third rounds, sound system out
