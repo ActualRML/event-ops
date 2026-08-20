@@ -76,7 +76,20 @@
      an HTML-only reply was stripped at parse — so there is no markup left to
      render even if someone wanted to. The app has no sanitiser, and putting a
      stranger's markup in its own DOM is not a thing to start doing. #}
-  <pre class="pratinjau">{{ balasan.body }}</pre>
+  <pre class="pratinjau">{{ jawaban }}</pre>
+
+  {# The quoted original, folded away. On the first real reply this was 39 of
+     55 lines — our own outgoing RFQ bounced back, pushing the attachments
+     below the fold. It is kept rather than dropped because inbox.body still
+     holds the whole message; only the display is folded. Plain <details>, no
+     script: the same disclosure the drawer uses, and Pico styles it for free.
+     Absent entirely when the reply carried no quote at all. #}
+  {% if kutipan %}
+  <details class="kutipan-asli">
+    <summary>Quoted original ({{ kutipan.splitlines()|length }} lines)</summary>
+    <pre class="pratinjau">{{ kutipan }}</pre>
+  </details>
+  {% endif %}
 </section>
 
 <section>

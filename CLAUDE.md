@@ -525,13 +525,22 @@ delivered copy back:
 Identical. Our id survives submission, so outbox.message_id is a usable
 matching key and the In-Reply-To tier is worth building.
 
-**The caveat on that result, so nobody over-reads it.** The check sends to
-SMTP_USER itself, so both ends are the same Gmail account. That does exercise
-the submission path, which is where a rewrite would happen — but it is not a
-delivery to an external domain, and it is one observation of a behaviour Gmail
-could change. Treat it as good evidence, not a guarantee. Anything built on
-this tier must degrade to the subject code rather than depend on it: matching
-on `[RFQ-xxxx]` plus the sender address needs no Message-ID at all.
+**Confirmed again on 2026-08-21, this time end to end.** The result above came
+from a self-addressed check, which left a fair objection standing: both ends
+were the same Gmail account, so it was not a real delivery. That objection is
+now settled. A batch went out to four separate addresses, one was replied to,
+and the reply came back carrying:
+
+    In-Reply-To : <178724662804.15892.13172911242195124227@DESKTOP-0TU80TQ>
+    outbox row  : <178724662804.15892.13172911242195124227@DESKTOP-0TU80TQ>
+
+Our id, sent, delivered, quoted back by the replying client, matched at tier 1.
+Three separate observations now agree.
+
+It remains one mail provider's behaviour rather than a guarantee, so anything
+built on this tier should still degrade to the subject code rather than depend
+on it — `[RFQ-xxxx]` plus the sender needs no Message-ID at all. But the tier
+is proven, not assumed.
 
 Re-run `cek_message_id.py` and update the block above if this ever looks wrong.
 It sends a real email — and note that .env carries DRY_RUN=false, so nothing

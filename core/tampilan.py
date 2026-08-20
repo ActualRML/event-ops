@@ -2,6 +2,7 @@
 used by the templates only — never by the email body, which stays Indonesian
 and goes through renderer.format_tanggal."""
 
+import re
 from datetime import datetime
 
 from core import renderer
@@ -164,3 +165,77 @@ def pesan_imap(error_msg) -> str:
         return "Mailbox rejected the login — check the app password, and that IMAP is enabled in Gmail"
 
     return PESAN_IMAP.get(nama, "Could not read the mailbox")
+
+
+# Baris atribusi yang dipasang klien email tepat di atas kutipan. Dikenali dari
+# BENTUKNYA, bukan dari kata-katanya: alamat dalam kurung siku lalu titik dua.
+#
+# Sengaja tidak mencocokkan "wrote:" atau "menulis:". Balasan nyata pertama yang
+# masuk ke sistem ini berbahasa Inggris ("On Fri, 21 Aug 2026 at 00:23,
+# Procurement <...> wrote:") padahal seluruh korespondensinya Indonesia — Gmail
+# memakai bahasa antarmuka si pembalas, bukan bahasa pesannya. Daftar kata akan
+# meleset pada bahasa keempat; kurung siku dan titik dua tidak.
+ATRIBUSI = re.compile(r"<[^<>@\s]+@[^<>\s]+>[^:]*:\s*$")
+
+# Sejauh mana menengok ke belakang untuk baris atribusi. Baris itu bisa terlipat
+# jadi dua ("...gmail.com>" lalu "wrote:"), tiga sudah lebih dari cukup.
+MAKS_ATRIBUSI = 3
+
+
+def belah_kutipan(body) -> tuple[str, str]:
+    """Pisahkan balasan jadi (jawaban, kutipan).
+
+    Klien email menyalin seluruh pesan asli di bawah jawaban. Pada balasan nyata
+    pertama di sistem ini: 55 baris, 39 di antaranya kutipan — jawaban vendornya
+    11 baris pertama, sisanya email kami sendiri dipantulkan balik. Lampiran,
+    yang justru dicari orang, terdorong jauh di bawah lipatan.
+
+    DIPOTONG SAAT TAMPIL, TIDAK SAAT SIMPAN. inbox.body tetap menyimpan pesan
+    utuh — aturan yang sama dengan pesan_error di atas: yang mentah tinggal di
+    database, penyesuaian terjadi di jalan keluar. Jadi kutipannya tidak hilang,
+    hanya dilipat, dan memperbaiki pemotong ini tidak butuh migrasi apa pun.
+
+    Kutipan dikenali dari baris diawali ">" — konvensi yang jauh lebih tua dari
+    Gmail dan dipakai semua klien. Tidak ada baris ">" berarti tidak ada yang
+    dipotong, dan seluruh isinya dikembalikan apa adanya.
+    """
+    if not body:
+        return "", ""
+
+    baris = str(body).splitlines()
+    awal = next((i for i, b in enumerate(baris) if b.lstrip().startswith(">")), None)
+    if awal is None:
+        return str(body).strip(), ""
+
+    jawaban = baris[:awal]
+    kutipan = baris[awal:]
+
+    # Baris kosong tepat sebelum kutipan bukan milik siapa-siapa.
+    while jawaban and not jawaban[-1].strip():
+        jawaban.pop()
+
+    # Lalu baris atribusinya, kalau ada. DICOBA DARI YANG TERPENDEK, dan itu
+    # bukan selera: ATRIBUSI memakai .search(), jadi menggabung tiga baris lalu
+    # mencocokkan akan tetap kena meski polanya hanya ada di baris terakhir —
+    # dan tiga baris itu ikut terhapus, termasuk jawaban vendornya. Versi
+    # pertama fungsi ini mencoba dari terpanjang dan menelan "Jawaban saya."
+    # pada atribusi satu baris. Mulai dari satu baris: yang terlipat tidak akan
+    # cocok pada n=1 (potongan "wrote:" tidak memuat alamat) lalu tertangkap
+    # di n=2, sedangkan yang satu baris berhenti tepat di n=1.
+    # BATASNYA, dan ini disengaja: atribusi yang terlipat TIGA baris menyisakan
+    # baris pertamanya ("On Fri, 21 Aug 2026") karena n=2 sudah cocok lebih
+    # dulu. Dibiarkan. Salahnya mengarah ke sisi yang benar — satu baris nyasar
+    # yang jelek dipandang, bukan jawaban vendor yang hilang tanpa jejak. Untuk
+    # membereskannya perlu menebak baris pembuka atribusi, dan itu balik lagi
+    # ke daftar kata per bahasa yang justru dihindari di atas.
+    for n in range(1, MAKS_ATRIBUSI + 1):
+        if len(jawaban) < n:
+            break
+        if ATRIBUSI.search(" ".join(x.strip() for x in jawaban[-n:])):
+            del jawaban[-n:]
+            break
+
+    while jawaban and not jawaban[-1].strip():
+        jawaban.pop()
+
+    return "\n".join(jawaban).strip(), "\n".join(kutipan).strip()

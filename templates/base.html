@@ -519,6 +519,14 @@
        count round rather than letting it stretch into an oval. Appears in two
        places from one value — the trigger and the Tracker row — so they
        cannot disagree. */
+    /* Kutipan asli pada halaman balasan, terlipat. summary-nya dibuat sekecil
+       teks pendukung karena ini bukan tindakan, hanya jalan melihat lagi apa
+       yang kita kirim sendiri. 12px jarak ke <pre> di dalamnya menyamai jarak
+       label ke kontrol di form. */
+    .kutipan-asli { margin-top: 12px; }
+    .kutipan-asli > summary { font-size: 13px; color: var(--pico-muted-color);
+                              cursor: pointer; }
+    .kutipan-asli > pre { margin-top: 12px; }
     .lencana-nav { display: inline-block; min-width: 18px; padding: 0 5px;
                    margin-left: 7px; border-radius: 999px;
                    background: #1565c0; color: #fff;

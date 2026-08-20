@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 import config
 import db
 import replies
+from core import tampilan
 from deps import templates
 
 router = APIRouter()
@@ -90,11 +91,20 @@ async def reply_detail(request: Request, reply_id: int):
     if balasan["request_id"] is None and balasan["vendor_id"] is not None:
         pilihan = db.batches_for_vendor(balasan["vendor_id"])
 
+    # Dibelah di sini, bukan di parser: inbox.body menyimpan pesan utuh dan
+    # pemotongan terjadi di jalan keluar, aturan yang sama dengan pesan_error.
+    # Dibawa sebagai dua kunci konteks, bukan filter, karena hasilnya sepasang
+    # nilai — filter yang mengembalikan tuple memaksa template membongkarnya
+    # dan itu lebih berisik daripada dua nama yang jelas.
+    jawaban, kutipan = tampilan.belah_kutipan(balasan["body"])
+
     return templates.TemplateResponse(
         request, "reply_detail.html",
         {
             "request": request,
             "balasan": balasan,
+            "jawaban": jawaban,
+            "kutipan": kutipan,
             "lampiran": db.list_attachments(reply_id),
             "pilihan": pilihan,
         },
