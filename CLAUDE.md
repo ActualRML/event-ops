@@ -39,11 +39,46 @@ Language — the split is by audience, not by file:
   English equivalent — "SPK" is the document's actual name — and as
   placeholder examples in fields whose contents get printed verbatim
   into the Indonesian document (scope of work, payment terms).
-- Routes and comments: English. Commit messages: English.
-- Identifiers: English for new code. Existing schema columns and the
-  domain helpers around them are Indonesian (nama_pt, judul_acara,
-  lingkup_kerja, terbilang, buat_spk_docx) — leave them; renaming a
-  column to translate it buys nothing and breaks every query.
+- Routes and comments: English. Commit messages: English. Docstrings too.
+- Identifiers are MIXED, deliberately and consistently. "English for new
+  code" was never what this codebase did — the rule below is, and it is
+  what to follow. Read it as one rule with a split, not as an exception
+  list:
+
+  **The verb is English where a caller scans for it. The noun is whatever
+  the domain calls the thing, and this domain is Indonesian.**
+
+  So `format_tanggal`, `parse_harga`, `kode_exists`, `harga_zona` and
+  `next_nomor` are all correct — an English verb on an Indonesian noun is
+  the normal case here, not a half-finished translation.
+
+  Where each side of that lands:
+
+  - **English, because something outside the code binds to the name** —
+    route handler functions (`event_list`, `send_dispatch`,
+    `tracker_retry`), URL paths, template filenames, Jinja filter names.
+    The one deliberate exception is the vendor-facing filter pair
+    `tanggal`/`durasi`, whose Indonesian names are the whole point; see
+    Presentation split.
+  - **English verb, leading, for every public db.py function** — `list_`,
+    `get_`, `create_`, `update_`, `set_`, `mark_`, `add_`, `remove_`,
+    `delete_`, `move_`, `bump_`. That prefix is how the file is read.
+  - **Indonesian throughout for pure domain operations in core/** —
+    `terbilang`, `buat_spk_docx`, `buat_kode`, `tandai_subjek`,
+    `hitung_jadwal`, `kirim_email`, `ke_tanggal`. These name a domain
+    action, not a CRUD one.
+  - **Indonesian as a matter of course for local variables and for
+    module-private helpers** — `baris`, `hasil`, `calon`, `acara`,
+    `permintaan`, `muat_spk`, `validasi_brief`, `pilih_event`,
+    `pakai_kode`, `brief_dari_row`. This is the bulk of the code and it is
+    uniform; matching it matters more than any of the above.
+  - **Schema columns follow the domain noun** — nama_pt, judul_acara,
+    lingkup_kerja, zona, kode. New columns included: `kode` is named for
+    what the domain calls it, exactly as `zona` was. Never rename a column
+    to translate it — it buys nothing and breaks every query.
+
+  When in doubt, match the file you are editing. A name that reads like
+  its neighbours is right even if this section did not anticipate it.
 
 ## Layout
 
@@ -53,14 +88,22 @@ Language — the split is by audience, not by file:
                      contoh (the "not a number" example, so the same parse
                      also serves a quantity field), capped at terbilang.MAKS
     tasks.py         SEND_TASKS, dispatch_batch, schedule_batch (phase B)
+    replies.py       the reply check: IMAP fetch, gate, match ladder, store.
+                     tasks.py's peer — see Import direction. NOT BUILT YET
     config.py        .env loading, and ZONA — the one mapping of zone key to
                      label and surcharge percentage, read by both the event
                      form and the price maths
     db.py            all SQL
     init_db.py       schema/seed CLI
     cek_email.py     one-off send test CLI
+    cek_message_id.py  one-off round-trip check: does the server preserve the
+                     Message-ID we set? Sends one real mail to ourselves and
+                     reads it back. See "Reply matching" below
     core/            domain logic, no web layer
       mailer.py      SMTP send, honours DRY_RUN
+      kode.py        the RFQ batch reference code — minting it, stamping it
+                     onto a subject, reading it back off one. The one place
+                     the format lives
       renderer.py    email subject/body rendering (vendor-facing)
       tampilan.py    interface formatting + SMTP error labels (staff-facing)
       dokumen.py     SPK .docx generation, format_rupiah
@@ -77,6 +120,11 @@ Language — the split is by audience, not by file:
       spk.py         /tracker/{request_id}/spk/{vendor_id} and download
       rundown.py     /events/{event_id}/rundown and its items
     templates/  static/  email_templates/  db/  docs/  README.md
+
+config is also where the IMAP settings live. IMAP_USER and IMAP_PASS fall back
+to the SMTP pair — same Gmail account, same app password, no second credential
+— and exist only so the two CAN be separated. DRY_RUN does not gate them; see
+invariant 2.
 
 db/migrations/ holds hand-applied SQL, numbered. There is no version table:
 nothing records that a migration ran, and re-running one fails on the
@@ -100,9 +148,20 @@ until it was actually run; if a fifth copy of this command ever appears,
 correct it there too.
 
 Import direction is one-way. core/ may import config and other core
-modules, and nothing else from this project: never db, deps, tasks, or
-anything under routes/. Routers may import db, deps, tasks and core.
-Nothing imports main.
+modules, and nothing else from this project: never db, deps, tasks,
+replies, or anything under routes/. Routers may import db, deps, tasks,
+replies and core. Nothing imports main.
+
+tasks.py and replies.py are the same layer and the only two modules in it:
+orchestration that needs db and core together but has no web layer of its
+own. tasks.py runs the send batch; replies.py runs the reply check. Both
+may import config, db and core; neither may import deps, routes or the
+other. A router imports them, never the reverse.
+
+That layer is not a general dumping ground. A third module belongs there
+only if it, too, is a whole operation that a handler starts and then stops
+caring about. Anything a handler needs *during* a request goes in deps.py,
+and anything with no db dependency goes in core/.
 
 config is importable from anywhere, routers included, and it is the one
 module with that freedom. It earns it by being a leaf: it imports os and
@@ -239,7 +298,8 @@ events(id PK, judul_acara NOT NULL, tanggal_acara, lokasi, created_at,
 
 requests(id PK, event_id FK ON DELETE CASCADE, category_id FK,
          kebutuhan, deadline, pengirim_nama,
-         subject_template NOT NULL, body_template NOT NULL, created_at)
+         subject_template NOT NULL, body_template NOT NULL, created_at,
+         kode TEXT — UNIQUE via idx_requests_kode, nullable)
 
 sponsors(id PK, event_id FK ON DELETE CASCADE,
          nama_pt TEXT NOT NULL COLLATE NOCASE,
@@ -281,6 +341,7 @@ the vendor list, the send-page picker and the outbox/tracker queries all
 read the view rather than re-joining vendor_categories.
 
 Indexes: idx_vendor_categories_category, idx_requests_event,
+idx_requests_kode (UNIQUE),
 idx_outbox_request, idx_outbox_status, idx_vendors_aktif, idx_spk_request,
 idx_sponsors_event, idx_sponsor_item_sponsor.
 
@@ -305,7 +366,18 @@ Rationale:
   chairs and staging
 - outbox.email_tujuan is denormalized so history stays accurate if a
   vendor's email changes
-- outbox.message_id is groundwork for future reply-matching
+- outbox.message_id is the id WE mint and set, not one the server hands back —
+  core/mailer.py calls make_msgid() and puts it on the message. It is minted
+  above the DRY_RUN branch and returned by both paths, so a dry-run row gets a
+  real unique id too. It used to return the literal "dry-run", which meant
+  every dry-run row shared one value and any lookup keyed on the column matched
+  all of them at once. Whether the id survives the trip is a separate question;
+  see "Reply matching" below
+- requests.kode is the batch reference code, printed into the outgoing subject
+  as [RFQ-3F2A]. Nullable because NULL is the true history: every batch sent
+  before codes existed carried no marker, and backfilling one would claim a
+  code no vendor ever saw. UNIQUE across all time, not per open batch — there
+  is no closed state here and a vendor may answer a six-month-old thread
 - subject_template separate from body: subject must be unique per vendor
   or Gmail collapses the batch into one thread
 - spk is stored rather than generated on demand: the SPK must be
@@ -338,13 +410,77 @@ SQLite cannot alter a CHECK in place, so a live db/rfq.db built before a
 constraint changed still carries the old one and picks the new one up on
 the next rebuild from schema.sql.
 
+## Reply matching
+
+Half-built on purpose. The OUTGOING half is done; the incoming half is not
+started, and there is one unanswered question gating it.
+
+**What exists.** Every batch carries a reference code (requests.kode), and
+core/kode.py stamps it onto the rendered subject as `[RFQ-3F2A]`. A subject
+survives a vendor pressing Reply, so the code comes back on the answer without
+the vendor doing anything. Nothing can be matched retroactively — only mail
+sent after this landed carries a marker at all, which is why the outgoing half
+had to ship first and alone.
+
+The marker is appended by renderer.render_email, NOT offered as a `{{ kode }}`
+placeholder in email_templates/rfq_subject.txt. That template is editable on
+the Send page, and a placeholder can be deleted by whoever is editing the copy.
+The marker is protocol, not copy, so it is not the copy editor's to remove.
+
+Order inside render_email is load-bearing: render, collapse whitespace, run the
+unresolved-placeholder check, THEN append. Appending before the check would
+have the function inspecting its own output; appending before the collapse
+would let the marker be folded into a line break.
+
+**The Message-ID question — ANSWERED 2026-08-19: Gmail PRESERVES it.**
+
+core/mailer.py mints a Message-ID and stores it on the outbox row. The
+strongest way to match a reply is to look for that id in the reply's
+In-Reply-To or References — an exact hit lands on an exact outbox row. That
+rested on an assumption no code here can check: that the submission server
+sends OUR id rather than replacing it. Gmail is widely reported to rewrite
+Message-ID on smtp.gmail.com, and the SMTP response cannot settle it because it
+carries a queue id, not a Message-ID.
+
+`cek_message_id.py` settled it by sending one real message and reading the
+delivered copy back:
+
+    generated : <178715512756.11756.11676591822792965433@DESKTOP-0TU80TQ>
+    received  : <178715512756.11756.11676591822792965433@DESKTOP-0TU80TQ>
+
+Identical. Our id survives submission, so outbox.message_id is a usable
+matching key and the In-Reply-To tier is worth building.
+
+**The caveat on that result, so nobody over-reads it.** The check sends to
+SMTP_USER itself, so both ends are the same Gmail account. That does exercise
+the submission path, which is where a rewrite would happen — but it is not a
+delivery to an external domain, and it is one observation of a behaviour Gmail
+could change. Treat it as good evidence, not a guarantee. Anything built on
+this tier must degrade to the subject code rather than depend on it: matching
+on `[RFQ-xxxx]` plus the sender address needs no Message-ID at all.
+
+Re-run `cek_message_id.py` and update the block above if this ever looks wrong.
+It sends a real email — and note that .env carries DRY_RUN=false, so nothing
+short-circuits that. It is run deliberately, never as part of a build.
+
+**What the incoming half will be**, decided but not written: `replies.py` at
+the root, tasks.py's peer, holding the whole check — IMAP fetch, the gate, the
+match ladder, the writes. No scheduler and no poller; a button starts it.
+imaplib is synchronous, so a handler must call it through asyncio.to_thread or
+it blocks the event loop, in-flight send batches included.
+
 ## Invariants
 
 1. PRAGMA foreign_keys = ON and journal_mode = WAL on EVERY new connection,
     not once at init; init_db.py deletes the -wal/-shm sidecars on rebuild,
     since a stale -wal replays old pages into the fresh db.
 2. DRY_RUN defaults True. When true, never open an SMTP connection —
-   log to/subject/body only.
+   log to/subject/body only. It is a SEND guard and nothing more: reading the
+   mailbox over IMAP sends nothing and changes nothing, so DRY_RUN deliberately
+   does not gate it. A demo with the send guard on can still show real replies
+   arriving. A Message-ID is still minted under DRY_RUN — an id is not a
+   connection, and minting it in both branches is what keeps dry-run rows from
+   all sharing one value.
 3. The UI must expose no path that sends without passing through the
    preview screen. The send route is not independently authenticated —
    this is a demo MVP with no auth layer.
@@ -358,6 +494,21 @@ the next rebuild from schema.sql.
 8. Double-send prevented at three layers: disabled button, server-side
    check, UNIQUE(request_id, vendor_id).
 9. Preview and send must call the identical render function.
+
+   ONE STATED EXCEPTION, and it is bounded to four characters. The subject
+   marker is rendered from requests.kode, but the code has to exist before the
+   subject can be rendered and the row that owns it is not written until
+   dispatch. So /send mints a code at preview and checks it free — and nothing
+   owns a code until the INSERT, so another batch can take it in between. When
+   that happens db.create_request re-rolls on the UNIQUE index rather than
+   failing the dispatch, and the sent subject differs from the previewed one
+   inside the marker.
+
+   The body and every other character of the subject cannot diverge: those come
+   from the templates, which ride the form verbatim. Rejected fix: a
+   reservation table handing out codes at preview — it removes the exception at
+   the price of a table whose whole job is owning four characters, plus an
+   orphan row for every abandoned preview.
 10. All application queries live in db.py. Route handlers contain no SQL.
     Standalone CLI scripts may run schema and maintenance SQL directly.
 11. status='sent' never reverts to 'draft'. Retry only from 'failed'.
@@ -950,7 +1101,8 @@ One rem/px gap is knowingly left open: table body text renders 18px
 against 14px form controls. See Units.
 
 ## Out of scope — do not build
-auth/login · automated reply parsing · quotations table · price
+auth/login · extracting quoted prices from reply attachments · rendering HTML
+mail · quotations table · price
 comparison · file attachments · per-category templates · calendar
 integration · Docker · CI · comprehensive tests
 
