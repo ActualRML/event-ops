@@ -9,19 +9,32 @@ import config
 
 
 async def kirim_email(to: str, subject: str, body: str) -> tuple[bool, str]:
-    """Send one email. Returns (ok, detail) where detail is a message id or error."""
+    """Send one email. Returns (ok, detail) where detail is a message id or error.
+
+    The Message-ID is minted HERE, above the DRY_RUN branch, and returned by
+    both paths. It used to be generated only on the real send, with dry runs
+    returning the literal string "dry-run" — which meant every dry-run row in
+    outbox shared one message_id, and any lookup keyed on that column matched
+    all of them at once. Minting it either way costs nothing, keeps the two
+    branches the same shape, and leaves reply-matching with a key that is
+    actually unique per row.
+
+    Invariant 2 is untouched: no connection is opened under DRY_RUN. An id is
+    not a connection.
+    """
+    message_id = make_msgid()
+
     if config.DRY_RUN:
         print("--- DRY RUN ---")
         print(f"To      : {to}")
         print(f"Subject : {subject}")
+        print(f"Msg-ID  : {message_id}")
         print("Body    :")
         print(body)
         print("--- END ---")
-        return True, "dry-run"
+        return True, message_id
 
     try:
-        message_id = make_msgid()
-
         msg = EmailMessage()
         msg["From"] = formataddr((config.SMTP_FROM_NAME, config.SMTP_USER))
         msg["To"] = to
