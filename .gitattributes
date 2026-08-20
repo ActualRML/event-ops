@@ -1,0 +1,29 @@
+# Binary files must never go through line-ending conversion.
+#
+# core.autocrlf is true on this machine, so on checkout Git rewrites LF to
+# CRLF in anything it believes is text. It decides that by looking for a NUL
+# byte in the first 8000 bytes — which works for JPEG and PNG, and fails for
+# db/seed_files/penawaran-contoh.pdf, a small hand-built PDF containing no NUL
+# at all. Git classified it as text.
+#
+# The damage is not cosmetic. A PDF's trailer points at a byte offset, and
+# every xref entry is a byte offset; injecting one CR per line shifts all of
+# them. Measured: a fresh clone produced 1593 bytes instead of 1547, with 46
+# CR bytes added, and `startxref` pointing into the middle of a font object.
+# The file opened from the repo was a broken document, while the one in the
+# working tree where it was created was fine — which is the kind of bug that
+# gets blamed on everything except version control.
+#
+# Listed by extension rather than fixed for the one file, because the next
+# binary fixture will have the same problem and no warning worth reading.
+*.pdf  binary
+*.docx binary
+*.doc  binary
+*.xlsx binary
+*.xls  binary
+*.zip  binary
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.gif  binary
+*.db   binary
