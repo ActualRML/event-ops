@@ -15,6 +15,82 @@ import db
 BASE_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = BASE_DIR / "db" / "schema.sql"
 SEED_PATH = BASE_DIR / "db" / "seed.sql"
+SEED_FILES = BASE_DIR / "db" / "seed_files"
+
+# The one seeded attachment, and the row that has to agree with it.
+#
+# Attachments are the payload of the reply feature — a vendor's quote is
+# almost always a PDF and the body is often just "terlampir penawaran kami" —
+# so a demo where nothing opens is showing the shell. seed.sql cannot do this
+# itself: the bytes live on the filesystem, and SQL cannot copy a file.
+#
+# A committed placeholder copied into place, never a generated one. No PDF
+# library is a dependency here and adding one for a fixture would be the
+# tail wagging the dog.
+#
+# The reply this attachment belongs to is found by its MESSAGE-ID, never by a
+# hardcoded row id. inbox.id depends on the order of the INSERTs in seed.sql,
+# so seeding one more reply above this one would shift it — and the failure is
+# the worst kind: the file and the row stop agreeing, the download 404s, and
+# nothing on the page explains why. message_id is UNIQUE, so the lookup cannot
+# quietly match the wrong row either.
+#
+# stored_name is then derived from the id that lookup returns, in the same
+# {inbox_id}-{position} shape replies.py writes, so a seeded attachment is
+# indistinguishable from a fetched one and the download route needs no special
+# case.
+SEED_LAMPIRAN = {
+    "sumber": SEED_FILES / "penawaran-contoh.pdf",
+    # Must match the tier-1 reply seeded in db/seed.sql.
+    "message_id": "<20260715.9f2a41@mail.gemasuara.co.id>",
+    "filename": "Penawaran Sound System - PT Gema Suara Perkasa.pdf",
+    "content_type": "application/pdf",
+}
+
+
+def salin_lampiran(conn) -> None:
+    """Copy the seeded attachment into place and record it.
+
+    Runs after seed.sql, because the inbox row it hangs off has to exist
+    first. Both failure modes warn rather than raise: a database with one
+    download missing is still a usable demo, and refusing to build at all over
+    a fixture would be worse. A silent skip would not be — that is what the
+    warnings are for.
+    """
+    sumber = SEED_LAMPIRAN["sumber"]
+    if not sumber.is_file():
+        print(f"  warning: {sumber} is missing, seeded reply will have no attachment",
+              file=sys.stderr)
+        return
+
+    baris = conn.execute(
+        "SELECT id FROM inbox WHERE message_id = ?",
+        (SEED_LAMPIRAN["message_id"],),
+    ).fetchone()
+    if baris is None:
+        print(f"  warning: no seeded reply with message_id "
+              f"{SEED_LAMPIRAN['message_id']}, attachment skipped", file=sys.stderr)
+        return
+
+    inbox_id = baris["id"]
+    # Position 1: this reply has exactly one attachment. A second would be
+    # 2, matching what replies.simpan_lampiran does with enumerate().
+    stored_name = f"{inbox_id}-1{sumber.suffix}"
+
+    tujuan_dir = Path(config.ATTACHMENT_DIR)
+    tujuan_dir.mkdir(parents=True, exist_ok=True)
+    tujuan = tujuan_dir / stored_name
+    isi = sumber.read_bytes()
+    tujuan.write_bytes(isi)
+
+    conn.execute(
+        """INSERT INTO inbox_attachment
+                  (inbox_id, filename, content_type, size_bytes, stored_name)
+           VALUES (?, ?, ?, ?, ?)""",
+        (inbox_id, SEED_LAMPIRAN["filename"], SEED_LAMPIRAN["content_type"],
+         len(isi), stored_name),
+    )
+    print(f"copied   {sumber.name} -> {tujuan} ({len(isi)} bytes)")
 
 # Every table in schema.sql, in dependency order. A table missing here is
 # still created — it just goes uncounted in the summary, which is how rundown
@@ -118,6 +194,8 @@ def main(argv: list[str]) -> int:
     with closing(db.get_conn()) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         conn.executescript(SEED_PATH.read_text(encoding="utf-8"))
+        # After the seed: this hangs off an inbox row seed.sql creates.
+        salin_lampiran(conn)
         conn.commit()
 
         print(f"created  {db_path}")

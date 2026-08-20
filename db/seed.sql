@@ -321,7 +321,20 @@ JOIN events e ON e.id = r.event_id
 JOIN categories c ON c.id = r.category_id
 WHERE v.id IN (17, 18, 19);
 
--- Batch 4 (event 2, Sound System): three vendors, clean batch.
+-- Batch 4 (event 2, Sound System): four vendors, clean batch.
+--
+-- Vendor 25 is here AND in batch 1, and that overlap is deliberate. It is the
+-- only vendor written to on two batches, and they belong to two different
+-- events — Tenda for event 1, Sound System for event 2 — which is exactly the
+-- situation tier 3 exists for. When that vendor sends a fresh message rather
+-- than a reply, their address alone cannot say which conversation it answers,
+-- so the ladder holds it instead of guessing. With every vendor on a single
+-- batch the assign chooser only ever offered one option and the whole manual
+-- step looked like ceremony.
+--
+-- Realistic, not contrived: vendor 25 carries categories Tenda and Sound
+-- System, and a supplier quoting both is the many-to-many case the schema
+-- notes already call out.
 INSERT INTO outbox
     (request_id, vendor_id, email_tujuan, subject, status, message_id,
      sent_at, created_at)
@@ -337,7 +350,7 @@ FROM v_vendor_lengkap v
 JOIN requests r ON r.id = 4
 JOIN events e ON e.id = r.event_id
 JOIN categories c ON c.id = r.category_id
-WHERE v.id IN (5, 6, 7);
+WHERE v.id IN (5, 6, 7, 25);
 
 -- Batch 5 (event 3, AC): the event a fortnight out, dispatched cleanly.
 INSERT INTO outbox
@@ -363,18 +376,23 @@ WHERE v.id IN (9, 10, 12);
 -- the interesting states have to be visible on first load, or nobody
 -- demonstrating this finds them.
 --
--- Batch 4 therefore reads "1 of 3 vendors have replied", and that number is
+-- Batch 4 therefore reads "1 of 4 vendors have replied", and that number is
 -- the whole point — it is only right because the auto-reply below is excluded.
--- If a change ever makes it read 2 of 3, that exclusion has broken.
+-- If a change ever makes it read 2 of 4, that exclusion has broken.
 --
---   vendor 5  tier 1, a real quote      -> counted, unread
---   vendor 6  tier 1, an out-of-office  -> stored, shown, NOT counted
---   vendor 7  tier 3, sender only       -> held for assignment, not attached
+--   vendor 5   tier 1, a real quote     -> counted, unread, has an attachment
+--   vendor 6   tier 1, an out-of-office -> stored, shown, NOT counted
+--   vendor 25  tier 3, sender only      -> held; that vendor is on TWO batches
 --
--- No inbox_attachment rows. Attachment BYTES live on the filesystem under
--- attachments/, and seed.sql cannot write files — a seeded row would promise a
--- download that 404s, which is worse than showing none. The attachment path is
--- exercised by a real check, not by the seed.
+-- The attachment on the first one is NOT seeded here. Its bytes live on the
+-- filesystem and SQL cannot copy a file, so init_db.py does it — see
+-- salin_lampiran there, which writes db/seed_files/penawaran-contoh.pdf into
+-- attachments/ and inserts the matching inbox_attachment row.
+--
+-- The two are coupled through the MESSAGE-ID below, not through a row id, so
+-- adding another reply above this one is safe. If you change that message_id,
+-- change SEED_LAMPIRAN in init_db.py to match — otherwise the build prints a
+-- warning and the seeded reply simply has no attachment.
 --
 -- message_id here is the INCOMING message's own id, from the vendor's server,
 -- which is why these do not look like the '<CAF...@mail.gmail.com>' ids in
@@ -426,29 +444,38 @@ SELECT '<autoreply-20260715-8812@audioprima.co.id>',
 FROM outbox o JOIN vendors v ON v.id = o.vendor_id
 WHERE o.request_id = 4 AND o.vendor_id = 6;
 
--- Tier 3: a fresh message rather than a reply, so no In-Reply-To and no code
--- in the subject. The sender is a known vendor and that is ALL we know, so it
--- is held rather than attached — the case the whole tier exists for. Assigning
--- it from the Replies page moves batch 4 to "2 of 3".
+-- Tier 3, and the reason the tier exists. A fresh message rather than a reply:
+-- no In-Reply-To, no code in the subject. The sender is a known vendor and
+-- that is ALL we know.
+--
+-- From vendor 25 on purpose — the one vendor written to on two batches, on two
+-- different events. The subject says "penawaran" and nothing else, so the
+-- address cannot say whether this answers the Tenda round on event 1 or the
+-- Sound System round on event 2. A ladder that guessed would be right half the
+-- time and silently wrong the other half, which is why it holds instead. The
+-- chooser on the Replies page offers both batches and a human picks.
+--
+-- Deliberately ambiguous copy: it mentions neither category, so the demo does
+-- not hand the answer to whoever is looking at it.
 INSERT INTO inbox
     (message_id, from_email, from_nama, subject, received_at, body, tier,
      request_id, outbox_id, vendor_id, read_at, auto_reply, created_at)
-SELECT '<CAF-nadarezeki-20260716-4471@mail.gmail.com>',
+SELECT '<CAF-mitrasarana-20260716-4471@mail.gmail.com>',
        v.email, v.pic_nama,
-       'Penawaran sound system',
+       'Penawaran untuk acara bulan depan',
        date('now', 'localtime', '-35 days') || ' 11:48:29',
        'Selamat siang Pak Ronald,' || char(10) || char(10) ||
        'Menindaklanjuti pembicaraan kita via telepon kemarin, berikut kami' || char(10) ||
-       'sampaikan penawaran untuk kebutuhan sound system. Mohon dicek dan' || char(10) ||
+       'sampaikan penawaran untuk kebutuhan acara tersebut. Mohon dicek dan' || char(10) ||
        'kami tunggu kabarnya.' || char(10) || char(10) ||
        'Terima kasih,' || char(10) || v.pic_nama || char(10) || v.nama_pt,
        3,
-       NULL,   -- NEVER attached by the ladder: one vendor can be on two
-       NULL,   -- concurrent events and an address cannot tell them apart
+       NULL,   -- NEVER attached by the ladder: this vendor is on two batches
+       NULL,   -- across two events, and an address cannot tell them apart
        v.id,
        NULL, 0,
        date('now', 'localtime', '-35 days') || ' 11:50:14'
-FROM vendors v WHERE v.id = 7;
+FROM vendors v WHERE v.id = 25;
 
 -- One successful check on record, so the Tracker and Replies pages show a
 -- "last checked" time rather than "never checked" on first load. Without this
