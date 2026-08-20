@@ -40,6 +40,23 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "")
 
+# Reading mail, for the Message-ID round-trip check and, later, reply matching.
+#
+# NO NEW CREDENTIALS. IMAP_USER and IMAP_PASS default to the SMTP pair, which
+# is the same Gmail account and the same app password — the vars exist only so
+# the two CAN be separated, not because they need to be. Gmail wants IMAP
+# switched on in its settings; nothing else changes.
+#
+# DRY_RUN deliberately does NOT gate any of this. DRY_RUN is a send guard —
+# invariant 2 is about not opening an SMTP connection — and reading a mailbox
+# sends nothing and changes nothing. A demo with the send guard on can still
+# show real replies arriving.
+IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
+IMAP_PORT = _get_int("IMAP_PORT", 993)
+IMAP_FOLDER = os.getenv("IMAP_FOLDER", "INBOX")
+IMAP_USER = os.getenv("IMAP_USER", "") or SMTP_USER
+IMAP_PASS = os.getenv("IMAP_PASS", "") or SMTP_PASS
+
 DRY_RUN = _get_bool("DRY_RUN", True)
 SEND_DELAY_SECONDS = _get_int("SEND_DELAY_SECONDS", 2)
 
@@ -91,6 +108,11 @@ if __name__ == "__main__":
     print(f"SMTP_USER           = {SMTP_USER}")
     print(f"SMTP_PASS           = <{len(SMTP_PASS)} chars>")
     print(f"SMTP_FROM_NAME      = {SMTP_FROM_NAME}")
+    print(f"IMAP_HOST           = {IMAP_HOST}")
+    print(f"IMAP_PORT           = {IMAP_PORT}")
+    print(f"IMAP_FOLDER         = {IMAP_FOLDER}")
+    print(f"IMAP_USER           = {IMAP_USER}")
+    print(f"IMAP_PASS           = <{len(IMAP_PASS)} chars>")
     print(f"DRY_RUN             = {DRY_RUN}")
     print(f"SEND_DELAY_SECONDS  = {SEND_DELAY_SECONDS}")
     print(f"DB_PATH             = {DB_PATH}")
