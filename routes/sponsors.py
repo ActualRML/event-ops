@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 import config
 import db
 from core import dokumen
-from deps import parse_harga, templates
+from deps import parse_halaman, parse_harga, templates
 
 router = APIRouter()
 
@@ -195,8 +195,9 @@ def jawab_qty(request: Request, sponsor_id: int):
 
 
 @router.get("/sponsors")
-async def sponsor_list(request: Request):
-    sponsors = db.list_sponsors()
+async def sponsor_list(request: Request, per: str = "", page: str = ""):
+    hal = parse_halaman(per, page, db.count_sponsors())
+    sponsors = db.list_sponsors(limit=hal["per"], offset=hal["offset"])
     # Grouped in Python rather than in the template: the rows arrive already
     # ordered by event, so this only has to break them where the event changes.
     kelompok: list[dict] = []
@@ -213,9 +214,17 @@ async def sponsor_list(request: Request):
                                         "value_total": s["value_total"]})}
         )
 
+    # Both chips count the TABLE, not the page. A group can also straddle a
+    # page boundary — its header simply repeats at the top of the next one,
+    # which is the honest rendering of a window onto an ordered list.
     return templates.TemplateResponse(
         request, "sponsors.html",
-        {"kelompok": kelompok, "jumlah": len(sponsors)},
+        {
+            "kelompok": kelompok,
+            "hal": hal,
+            "jumlah": hal["total"],
+            "jumlah_event": db.count_sponsor_events(),
+        },
     )
 
 

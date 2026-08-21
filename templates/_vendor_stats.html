@@ -2,7 +2,9 @@
    further down the page, so on a swap these come back out of band instead —
    same markup either way, so the counts can never disagree with the rows. #}
 <p class="chips" id="chips-vendor" {% if oob %}hx-swap-oob="true"{% endif %}>
-  <span class="chip"><span class="chip-angka">{{ vendors|length }}</span> vendor{{ "s" if vendors|length != 1 }}</span>
+  {# hal.total, not vendors|length: with a page of 25 out of 120 the list
+   is a window and its length is not the count. #}
+  <span class="chip"><span class="chip-angka">{{ hal.total }}</span> vendor{{ "s" if hal.total != 1 }}</span>
   <span class="chip"><span class="chip-angka">{{ categories|length }}</span> categor{{ "ies" if categories|length != 1 else "y" }}</span>
   {% if category %}<span class="chip">filtered to {{ category }}</span>{% endif %}
   {% if q %}<span class="chip">matching “{{ q }}”</span>{% endif %}

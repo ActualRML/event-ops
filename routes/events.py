@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 
 import config
 import db
-from deps import templates
+from deps import parse_halaman, templates
 
 router = APIRouter()
 
@@ -90,13 +90,16 @@ def form_context(request: Request, acara, v: dict, errors: dict) -> dict:
 
 
 @router.get("/events")
-async def event_list(request: Request):
-    events = db.list_events()
+async def event_list(request: Request, per: str = "", page: str = ""):
+    hal = parse_halaman(per, page, db.count_events())
+    events = db.list_events(limit=hal["per"], offset=hal["offset"])
     return templates.TemplateResponse(
         request, "events.html",
         {
             "events": events,
-            "jumlah": len(events),
+            "hal": hal,
+            # The chip counts the table, not the page.
+            "jumlah": hal["total"],
             # Same mapping the form's dropdown uses. The list renders the rate
             # too: an event's zone is what its package lines get priced at, so
             # hiding it here would mean opening every event to find out which

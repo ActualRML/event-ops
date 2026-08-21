@@ -123,8 +123,19 @@
           <span class="redup">—</span>
           {% endif %}
         </td>
-        {# Offered on every row whatever the status: a vendor whose email
-           bounced can still win the job over the phone. #}
+        {# Gated: an SPK is offered only to a vendor whose quote a person
+           ACCEPTED, on the reply detail page. Replying is not agreeing, so a
+           vendor who answered and was turned down never opens this.
+
+           This closes the original rule that it was offered on every row so a
+           vendor who won the job by phone could still be issued one. No
+           accepted quote, no SPK, and no override anywhere in the UI.
+
+           `boleh_spk` is computed by db.vendors_approved and must be in BOTH
+           contexts that render this partial, or the poll's last swap of a
+           batch hands back a table with every button open again. The route
+           enforces the same rule, so hiding the button is the courtesy and the
+           403 is the guarantee. #}
         <td class="aksi">
           {% set s = spk.get(r.vendor_id) %}
           {% if s %}
@@ -135,11 +146,15 @@
             <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}/download"
                role="button" class="secondary outline btn-mini">Download</a>
           </div>
-          {% else %}
+          {% elif r.vendor_id in boleh_spk %}
           <div class="aksi-grup">
             <a href="/tracker/{{ request_id }}/spk/{{ r.vendor_id }}" role="button"
                class="secondary outline btn-mini btn-spk">Issue SPK</a>
           </div>
+          {% else %}
+          {# Not a disabled button: there is nothing to press and nothing this
+             row can do to earn it. The reason lives one column to the left. #}
+          <span class="redup">—</span>
           {% endif %}
         </td>
       </tr>

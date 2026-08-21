@@ -255,7 +255,22 @@ CREATE TABLE inbox (
     -- Recorded, not filtered: stored and displayed like any other reply, and
     -- left out of the count and the badge. Same shape as tier — store what it
     -- is, let the display decide.
-    auto_reply  INTEGER NOT NULL DEFAULT 0 CHECK (auto_reply IN (0, 1))
+    auto_reply  INTEGER NOT NULL DEFAULT 0 CHECK (auto_reply IN (0, 1)),
+    -- When a person accepted this quote, and NULL until they do. It is the
+    -- gate an SPK has to pass: procurement reads the reply, agrees with what
+    -- the vendor offered, and says so here.
+    --
+    -- Deliberately not read_at and deliberately not outbox.status. read_at
+    -- means "seen", which is not agreement — the whole point of this column is
+    -- that opening a quote and accepting it are different acts. outbox.status
+    -- is a DELIVERY outcome (invariant 19) and is per vendor, while agreement
+    -- is per reply: a vendor who sends a revised quote is a second row, and
+    -- which of the two was accepted has to stay answerable.
+    --
+    -- A timestamp rather than a flag, for the same reason read_at is one: when
+    -- it was agreed is worth as much as whether. Cleared back to NULL by
+    -- un-approving, which is refused once an SPK exists for that pair.
+    approved_at TEXT
 );
 
 -- One file attached to a reply. The BYTES are on the filesystem under

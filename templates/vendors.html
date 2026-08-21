@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Vendors — Vendor RFQ Blast{% endblock %}
+{% block title %}Vendors — {{ merek }}{% endblock %}
 
 {% block content %}
 <hgroup>
@@ -44,4 +44,7 @@
 </div>
 
 {% include "_vendor_table.html" %}
+
+{# In place on a full load; the swap sends its own copy out of band. #}
+{% include "_pagination.html" %}
 {% endblock %}

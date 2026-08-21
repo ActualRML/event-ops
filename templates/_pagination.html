@@ -1,0 +1,59 @@
+{# The pager, shared by every list page. `hal` is deps.parse_halaman's dict.
+
+   Rendered at all only when there is more than one page-size worth of rows:
+   below that every control on it would be dead, and a disabled pager on a
+   six-row table is furniture. So a small list looks exactly as it did before
+   pagination existed.
+
+   On /vendors this rides out of band, the same mechanism _vendor_stats.html
+   uses, because the swap target there is the <table> itself and a pager cannot
+   live inside one. That is not cosmetic: after a search swaps the table, a
+   pager left behind would still be linking to pages of the PREVIOUS query. The
+   route sets `oob`, and only then does the wrapper carry hx-swap-oob.
+
+   Plain links, no htmx, no script. Paging is a deliberate click and a full
+   repaint is honest; query_ganti keeps the rest of the URL — the search, the
+   filter, the archive toggle — so page 2 of a search stays page 2 of that
+   search. #}
+{% if hal.total > hal.pilihan[0] %}
+<div class="penomoran" id="penomoran" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <div class="penomoran-jumlah">
+    Showing <span class="chip-angka">{{ hal.dari }}–{{ hal.sampai }}</span>
+    of <span class="chip-angka">{{ hal.total }}</span>
+  </div>
+
+  <div class="penomoran-ukuran">
+    Per page
+    {% for n in hal.pilihan %}
+    {# Changing the size returns to page 1: staying on page 5 while the window
+       triples lands somewhere the user did not ask for. page is dropped rather
+       than set to 1, so the URL stays as short as it can. #}
+    {% if n == hal.per %}
+    <span class="penomoran-kini">{{ n }}</span>
+    {% else %}
+    <a href="{{ query_ganti(request, per=n, page=None) }}">{{ n }}</a>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="penomoran-arah">
+    {# Disabled ends are rendered as text, not as dead links: there is nothing
+       to press, and a link that does not go anywhere is worse than no link. #}
+    {% if hal.page > 1 %}
+    <a href="{{ query_ganti(request, page=hal.page - 1) }}"
+       role="button" class="secondary outline">Previous</a>
+    {% else %}
+    <span class="penomoran-mati">Previous</span>
+    {% endif %}
+
+    <span class="penomoran-posisi">{{ hal.page }} / {{ hal.total_halaman }}</span>
+
+    {% if hal.page < hal.total_halaman %}
+    <a href="{{ query_ganti(request, page=hal.page + 1) }}"
+       role="button" class="secondary outline">Next</a>
+    {% else %}
+    <span class="penomoran-mati">Next</span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

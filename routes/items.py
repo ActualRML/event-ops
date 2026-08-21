@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 
 import db
 from core import dokumen
-from deps import parse_harga, templates
+from deps import parse_halaman, parse_harga, templates
 
 router = APIRouter()
 
@@ -58,18 +58,24 @@ def form_context(request: Request, item, v: dict, errors: dict) -> dict:
 
 
 @router.get("/items")
-async def item_list(request: Request, arsip: str = ""):
-    items = db.list_catalog_items(include_inactive=bool(arsip))
+async def item_list(request: Request, arsip: str = "", per: str = "",
+                    page: str = ""):
+    hal = parse_halaman(per, page, db.count_catalog_items(bool(arsip)))
+    items = db.list_catalog_items(include_inactive=bool(arsip),
+                                  limit=hal["per"], offset=hal["offset"])
+    # Counted in SQL, not from `items`. They used to be summed over the fetched
+    # rows, which was exact while every row was fetched — with a page of 25 out
+    # of 120 it would report the page and call it the catalog.
+    aktif = db.count_catalog_items(False)
     return templates.TemplateResponse(
         request,
         "items.html",
         {
             "items": items,
             "arsip": bool(arsip),
-            # Counted here rather than in the template: sqlite3.Row has no
-            # attribute access, so Jinja's selectattr cannot read aktif.
-            "jumlah_aktif": sum(1 for i in items if i["aktif"]),
-            "jumlah_arsip": sum(1 for i in items if not i["aktif"]),
+            "hal": hal,
+            "jumlah_aktif": aktif,
+            "jumlah_arsip": db.count_catalog_items(True) - aktif,
         },
     )
 

@@ -5,10 +5,10 @@ import sys
 
 from core.mailer import kirim_email
 
-SUBJECT = "Test RFQ - Vendor RFQ Blast"
+SUBJECT = "Test RFQ - Event Ops"
 BODY = """Halo,
 
-Ini adalah email percobaan dari tool Vendor RFQ Blast.
+Ini adalah email percobaan dari tool Event Ops.
 Abaikan pesan ini.
 
 Terima kasih.

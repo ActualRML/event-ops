@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 import db
-from deps import parse_ids, templates
+from deps import parse_halaman, parse_ids, templates
 
 router = APIRouter()
 
@@ -90,7 +90,8 @@ async def index(request: Request):
 
 
 @router.get("/vendors")
-async def vendor_list(request: Request, category: str = "", q: str = ""):
+async def vendor_list(request: Request, category: str = "", q: str = "",
+                      per: str = "", page: str = ""):
     # Search-as-you-type and the category filter both land here. HTMX gets the
     # table fragment; a normal navigation or a refresh gets the whole page, off
     # the same query — so a swapped view and a reloaded one always agree.
@@ -98,14 +99,20 @@ async def vendor_list(request: Request, category: str = "", q: str = ""):
     # page: it replaces the body, and a fragment there deletes the controls.
     htmx = (request.headers.get("HX-Request") == "true"
             and request.headers.get("HX-History-Restore-Request") != "true")
+    # Count first: the page number cannot be clamped to a range that is not
+    # known yet, and the same filter has to answer both questions.
+    hal = parse_halaman(per, page, db.count_vendors(
+        kategori=category or None, q=q or None, aktif_only=False))
     return templates.TemplateResponse(
         request,
         "_vendor_table.html" if htmx else "vendors.html",
         {
             # Inactive vendors stay listed here; aktif_only is for the send path.
             "vendors": db.list_vendors(
-                kategori=category or None, q=q or None, aktif_only=False
+                kategori=category or None, q=q or None, aktif_only=False,
+                limit=hal["per"], offset=hal["offset"],
             ),
+            "hal": hal,
             "categories": db.list_categories(),
             "category": category,
             "q": q,

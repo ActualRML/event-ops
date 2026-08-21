@@ -5,13 +5,13 @@ from fastapi.responses import RedirectResponse
 
 import db
 import tasks
-from deps import templates
+from deps import parse_halaman, templates
 
 router = APIRouter()
 
 
 @router.get("/tracker")
-async def tracker(request: Request):
+async def tracker(request: Request, per: str = "", page: str = ""):
     # The check state rides along so this page can say when the mailbox was
     # last read and surface a failed run as a banner.
     #
@@ -20,11 +20,17 @@ async def tracker(request: Request):
     # calls are not worth widening deps for. cek_berhasil is the last
     # SUCCESSFUL run, which is not the same as cek_terakhir — a first-ever
     # check that failed must not show its own timestamp as a result.
+    hal = parse_halaman(per, page, db.count_requests())
     terakhir = db.last_check()
     return templates.TemplateResponse(
         request, "tracker.html",
         {
-            "requests": db.list_requests(),
+            "requests": db.list_requests(limit=hal["per"], offset=hal["offset"]),
+            "hal": hal,
+            # Replies the ladder could not fully place. This page is their only
+            # surface now that /tracker/replies is gone; the template renders
+            # the section only when the list is non-empty.
+            "perlu_assign": db.list_unassigned(),
             "cek_terakhir": terakhir,
             "cek_berhasil": db.watermark(),
             "pernah": terakhir is not None,
@@ -50,6 +56,11 @@ async def tracker_detail(request: Request, request_id: int):
             # next swap wipes the Replies column mid-batch, the same way it
             # once wiped the SPK column.
             "balasan": db.replies_by_vendor(request_id),
+            # Which vendors may be issued an SPK. Same rule as routes/spk.py
+            # enforces, so the button and the route cannot disagree — and in
+            # BOTH _progress.html contexts, or the poll's next swap hands back
+            # a table with every SPK button open again.
+            "boleh_spk": db.vendors_approved(request_id),
             # Only so the Rundown button can say whether it opens one or
             # starts one. The rundown page itself is reached by event id and
             # loads its own row.

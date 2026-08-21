@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Sponsors — Vendor RFQ Blast{% endblock %}
+{% block title %}Sponsors — {{ merek }}{% endblock %}
 
 {% block content %}
 <hgroup>
   <h2>Sponsors</h2>
   <p class="chips">
     <span class="chip"><span class="chip-angka">{{ jumlah }}</span> sponsor{{ "s" if jumlah != 1 }}</span>
-    <span class="chip"><span class="chip-angka">{{ kelompok|length }}</span> event{{ "s" if kelompok|length != 1 }}</span>
+    <span class="chip"><span class="chip-angka">{{ jumlah_event }}</span> event{{ "s" if jumlah_event != 1 }}</span>
     <span class="chip">newest event first</span>
   </p>
 </hgroup>
@@ -79,5 +79,7 @@
     </tr>
   </tbody>
 </table>
+
+{% include "_pagination.html" %}
 {% endfor %}
 {% endblock %}

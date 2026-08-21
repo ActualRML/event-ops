@@ -1,4 +1,4 @@
-"""Vendor RFQ Blast — app entrypoint.
+"""Event Ops — app entrypoint.
 
 Wiring only: the app object, the Jinja filters, the static mount and the
 router includes. Every handler lives under routes/."""
@@ -10,11 +10,11 @@ from fastapi.staticfiles import StaticFiles
 
 import db
 from core import dokumen, renderer, tampilan
-from deps import templates
+from deps import query_ganti, templates
 from routes import (events, items, replies, rundown, send, spk, sponsors,
                     tracker, vendors)
 
-app = FastAPI(title="Vendor RFQ Blast")
+app = FastAPI(title="Event Ops")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Presentation only, all from tampilan — renderer.format_tanggal stays
@@ -38,6 +38,17 @@ templates.env.filters["durasi"] = renderer.format_durasi
 # thousands convention is a locale, not a language, so the catalog table and
 # the SPK print an amount identically and share dokumen's one formatter.
 templates.env.filters["rupiah"] = dokumen.format_rupiah
+# The product name, in ONE place. It is in the header, the footer and the
+# suffix of every page title, and before this it was typed out in all twenty-two
+# of them — so renaming the app meant editing twenty-two files and missing one.
+# A global rather than a per-handler context key, for the same reason the badge
+# is one: base.html and every title block need it, and no handler should have to
+# remember to pass it.
+# Builds a page link that keeps the rest of the query. A global, because every
+# list page's pager needs it and none of them should have to pass it; it takes
+# `request`, which templates already have.
+templates.env.globals["query_ganti"] = query_ganti
+templates.env.globals["merek"] = "Event Ops"
 # Footer year. Read at startup — a demo restarts far more often than a year turns.
 templates.env.globals["tahun"] = date.today().year
 # The nav badge, as a CALLABLE rather than a value: base.html renders on every

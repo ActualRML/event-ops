@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Tracker — Vendor RFQ Blast{% endblock %}
+{% block title %}Tracker — {{ merek }}{% endblock %}
 
 {% block content %}
 <hgroup>
   <h2>Tracker</h2>
   <p class="chips">
-    <span class="chip"><span class="chip-angka">{{ requests|length }}</span> send request{{ "s" if requests|length != 1 }}</span>
+    <span class="chip"><span class="chip-angka">{{ hal.total }}</span> send request{{ "s" if hal.total != 1 }}</span>
     <span class="chip">newest first</span>
     {# Never a bare zero. Before the first successful check there is no result
        to report, and saying so is the difference between "nobody replied" and
@@ -29,7 +29,6 @@
 <div class="grid">
   <div></div>
   <div class="aksi-halaman">
-    <a href="/tracker/replies" role="button" class="secondary outline">Replies</a>
     <form method="post" action="/tracker/replies/check">
       <button type="submit">Check replies</button>
     </form>
@@ -105,4 +104,73 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% if perlu_assign %}
+{# Replies the ladder could not fully place. There is no page of their own any
+   more — this section IS the whole surface, and it renders only when there is
+   something in it, so the ordinary run of a batch never shows it.
+
+   It cannot simply be dropped. These rows appear nowhere else: they carry no
+   vendor or no batch, so the outbox table above has no row to hang them on,
+   and the nav badge counts them. With nothing rendering them the badge would
+   name a number no screen could show and no click could clear — the exact
+   failure this feature exists to prevent. #}
+<section>
+  <h3>Replies needing a decision</h3>
+  <p class="redup">
+    These could not be matched to a vendor and a batch on their own. Open one
+    to say where it belongs.
+  </p>
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 22%">
+      <col style="width: 34%">
+      <col style="width: 14%">
+      <col style="width: 12%">
+      <col style="width: 18%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>From</th>
+        <th>Subject</th>
+        <th>Received</th>
+        <th>Matched</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in perlu_assign %}
+      <tr>
+        <td>
+          {% if b.nama_pt %}
+          <strong>{{ b.nama_pt }}</strong>
+          <div class="redup sel-teks" title="{{ b.from_email }}">{{ b.from_email }}</div>
+          {% else %}
+          <div class="sel-teks" title="{{ b.from_email }}">{{ b.from_email }}</div>
+          {% endif %}
+        </td>
+        <td>{{ b.subject }}</td>
+        <td class="redup sel-teks">{{ b.received_at }}</td>
+        {# Keyed off what is MISSING, the same way db.list_unassigned selects
+           them: a batch already resolved but no sender, a sender but no batch,
+           or neither. #}
+        <td class="redup">
+          {%- if b.request_id is not none %}Batch
+          {%- elif b.vendor_id is not none %}Sender
+          {%- else %}Nothing{% endif -%}
+        </td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            <a href="/tracker/replies/{{ b.id }}" role="button"
+               class="secondary outline btn-mini btn-spk">Open and assign</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+{% include "_pagination.html" %}
+</section>
+{% endif %}
 {% endblock %}

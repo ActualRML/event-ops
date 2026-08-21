@@ -29,6 +29,22 @@ def muat_spk(request_id: int, vendor_id: int):
     if not any(r["vendor_id"] == vendor_id for r in db.list_outbox_rows(request_id)):
         raise HTTPException(status_code=404, detail="Vendor is not part of this request")
 
+    # The gate, and it sits here rather than on each route so the form, the
+    # save and the download cannot drift apart — all three come through this
+    # function. An SPK is only issued to a vendor whose quote a person ACCEPTED
+    # — replying is not agreeing, and the acceptance is a separate act on the
+    # reply detail page.
+    #
+    # This closes the original rule that the action was offered on every row so
+    # a vendor who won the job by phone could still be issued one. No accepted
+    # quote, no SPK, and there is no override in the UI.
+    if vendor_id not in db.vendors_approved(request_id):
+        raise HTTPException(
+            status_code=403,
+            detail="An SPK can only be issued once this vendor's quote has "
+                   "been approved",
+        )
+
     return permintaan, vendor, db.get_spk(request_id, vendor_id)
 
 

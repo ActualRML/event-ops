@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Send — Vendor RFQ Blast{% endblock %}
+{% block title %}Send — {{ merek }}{% endblock %}
 
 {% block content %}
 <hgroup class="judul-rapat">
@@ -233,16 +233,5 @@
   }
 
   hitungUlang();
-
-  // Clicking anywhere in a date field opens the calendar, not just the small
-  // icon at its right edge. showPicker needs a user gesture and this click is
-  // one; browsers without showPicker still work through the icon.
-  document.querySelectorAll('#form-kirim input[type="date"]').forEach(function (input) {
-    input.addEventListener('click', function () {
-      if (typeof input.showPicker !== 'function') return;
-      // Already open (e.g. the click landed on the icon) throws InvalidStateError.
-      try { input.showPicker(); } catch (e) { /* ignore */ }
-    });
-  });
 </script>
 {% endblock %}

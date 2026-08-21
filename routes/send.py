@@ -423,5 +423,9 @@ async def send_progress(request: Request, request_id: int):
             # And the Replies column, for exactly the same reason. Anything
             # _progress.html renders has to be in BOTH of its contexts.
             "balasan": db.replies_by_vendor(request_id),
+            # And the SPK gate. Mid-batch this is always empty — nothing has
+            # replied yet, let alone been assigned — but it has to be present,
+            # or the poll's last swap reopens every SPK button on the page.
+            "boleh_spk": db.vendors_approved(request_id),
         },
     )

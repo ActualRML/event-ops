@@ -40,7 +40,7 @@ import time
 import config
 from core.mailer import kirim_email
 
-SUBJECT = "Message-ID round trip - Vendor RFQ Blast"
+SUBJECT = "Message-ID round trip - Event Ops"
 BODY = """Halo,
 
 Ini email percobaan untuk memeriksa header Message-ID.

@@ -72,3 +72,9 @@
     {% endfor %}
   </tbody>
 </table>
+
+{# The pager belongs to the query this table answers, so it swaps WITH it.
+   On a full page load `oob` is false and vendors.html renders it in place
+   instead; on a swap it rides out of band, the same as the chips. Left
+   behind it would still link to pages of the previous search. #}
+{% if oob %}{% include "_pagination.html" %}{% endif %}

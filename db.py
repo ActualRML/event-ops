@@ -68,11 +68,13 @@ def pola_cari(q: str) -> str:
     return f"%{aman}%"
 
 
-def list_vendors(kategori: str | None = None, q: str | None = None,
-                 aktif_only: bool = True) -> list[sqlite3.Row]:
-    """Vendors with their categories flattened. Filter is by category membership,
-    so a vendor listed under several categories matches each of them. q narrows
-    that further by name, PIC, or email; the two combine with AND."""
+def _saring_vendor(kategori: str | None, q: str | None, aktif_only: bool):
+    """The WHERE for a vendor list, as (sql, params). Module-private.
+
+    Built once and shared by list_vendors and count_vendors rather than written
+    twice. Two copies of a filter is how a paginated page ends up saying "of
+    120" over a table showing a differently filtered 25 — the count and the
+    rows have to be the same question asked twice."""
     clauses = []
     params: list[object] = []
 
@@ -98,10 +100,31 @@ def list_vendors(kategori: str | None = None, q: str | None = None,
         )
         params.append(kategori)
 
-    sql = "SELECT * FROM v_vendor_lengkap"
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY nama_pt"
+    return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+
+def count_vendors(kategori: str | None = None, q: str | None = None,
+                  aktif_only: bool = True) -> int:
+    """How many vendors the same filter matches — the total behind the pager."""
+    where, params = _saring_vendor(kategori, q, aktif_only)
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM v_vendor_lengkap" + where, params
+        ).fetchone()[0]
+
+
+def list_vendors(kategori: str | None = None, q: str | None = None,
+                 aktif_only: bool = True, limit: int | None = None,
+                 offset: int = 0) -> list[sqlite3.Row]:
+    """Vendors with their categories flattened, newest filter applied.
+
+    limit/offset page the result. Left as None by the send path, which needs
+    every matching vendor to tick rather than a window onto them."""
+    where, params = _saring_vendor(kategori, q, aktif_only)
+    sql = "SELECT * FROM v_vendor_lengkap" + where + " ORDER BY nama_pt"
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = params + [limit, offset]
 
     with closing(get_conn()) as conn:
         return conn.execute(sql, params).fetchall()
@@ -193,7 +216,8 @@ def set_vendor_aktif(vendor_id: int, aktif: int) -> None:
         conn.commit()
 
 
-def list_catalog_items(include_inactive: bool = False) -> list[sqlite3.Row]:
+def list_catalog_items(include_inactive: bool = False, limit: int | None = None,
+                       offset: int = 0) -> list[sqlite3.Row]:
     """Catalog items by name. The column is COLLATE NOCASE, so the ordering is
     case-insensitive without saying so here.
 
@@ -207,9 +231,24 @@ def list_catalog_items(include_inactive: bool = False) -> list[sqlite3.Row]:
     if not include_inactive:
         sql += " WHERE aktif = 1"
     sql += " ORDER BY nama"
+    params: list[object] = []
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = [limit, offset]
 
     with closing(get_conn()) as conn:
-        return conn.execute(sql).fetchall()
+        return conn.execute(sql, params).fetchall()
+
+
+def count_catalog_items(include_inactive: bool = False) -> int:
+    """How many catalog rows the page would show — the total behind the pager.
+    Mirrors list_catalog_items' one condition; there is only the one, so no
+    shared filter helper is warranted here."""
+    sql = "SELECT COUNT(*) FROM items"
+    if not include_inactive:
+        sql += " WHERE aktif = 1"
+    with closing(get_conn()) as conn:
+        return conn.execute(sql).fetchone()[0]
 
 
 def get_catalog_item(item_id: int) -> sqlite3.Row | None:
@@ -290,16 +329,28 @@ def create_event(judul_acara: str, tanggal_acara: str, lokasi: str,
         return cur.lastrowid
 
 
-def list_events() -> list[sqlite3.Row]:
-    """Events newest first, with how many batches each has gone out in."""
+def count_events() -> int:
+    """How many events exist — the total behind the pager."""
     with closing(get_conn()) as conn:
-        return conn.execute(
-            """SELECT e.*, COUNT(r.id) AS batches
-                 FROM events e
-                 LEFT JOIN requests r ON r.event_id = e.id
-                GROUP BY e.id
-                ORDER BY e.id DESC"""
-        ).fetchall()
+        return conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+
+
+def list_events(limit: int | None = None, offset: int = 0) -> list[sqlite3.Row]:
+    """Events newest first, with how many batches each has gone out in.
+
+    limit/offset page the list page. Left as None by /send, whose event picker
+    is a select over everything that exists and must not be windowed."""
+    sql = """SELECT e.*, COUNT(r.id) AS batches
+               FROM events e
+               LEFT JOIN requests r ON r.event_id = e.id
+              GROUP BY e.id
+              ORDER BY e.id DESC"""
+    params: list[object] = []
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = [limit, offset]
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchall()
 
 
 def get_event(event_id: int) -> sqlite3.Row | None:
@@ -555,13 +606,15 @@ def progress(request_id: int) -> dict:
     }
 
 
-def list_requests() -> list[sqlite3.Row]:
+def list_requests(limit: int | None = None, offset: int = 0) -> list[sqlite3.Row]:
     """Batches newest first, with their outbox tallies. judul_acara and
     tanggal_acara come from the event, so callers read the same keys they
-    always did."""
-    with closing(get_conn()) as conn:
-        return conn.execute(
-            """SELECT r.id, r.event_id, e.judul_acara, e.tanggal_acara,
+    always did.
+
+    The two window functions are computed BEFORE LIMIT, so "batch 2 of 3" keeps
+    counting across every batch of that event and does not start describing the
+    page. That is the behaviour wanted; do not move them."""
+    sql = """SELECT r.id, r.event_id, e.judul_acara, e.tanggal_acara,
                       c.nama AS kategori, r.created_at,
                       -- Window functions run after GROUP BY, so these count
                       -- batches per event, not outbox rows.
@@ -578,7 +631,18 @@ def list_requests() -> list[sqlite3.Row]:
                  LEFT JOIN outbox o ON o.request_id = r.id
                 GROUP BY r.id
                 ORDER BY r.id DESC"""
-        ).fetchall()
+    params: list[object] = []
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = [limit, offset]
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def count_requests() -> int:
+    """How many batches exist — the total behind the pager."""
+    with closing(get_conn()) as conn:
+        return conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
 
 
 def request_detail(request_id: int) -> sqlite3.Row | None:
@@ -894,7 +958,8 @@ SQL_SPONSOR_WITH_EVENT = """
 """
 
 
-def list_sponsors(event_id: int | None = None) -> list[sqlite3.Row]:
+def list_sponsors(event_id: int | None = None, limit: int | None = None,
+                  offset: int = 0) -> list[sqlite3.Row]:
     """Sponsors with their event and their package tallied up.
 
     event_id None means every sponsor, newest event first and alphabetical
@@ -920,9 +985,37 @@ def list_sponsors(event_id: int | None = None) -> list[sqlite3.Row]:
         sql += " WHERE s.event_id = ?"
         params.append(event_id)
     sql += " GROUP BY s.id ORDER BY s.event_id DESC, s.nama_pt"
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
 
     with closing(get_conn()) as conn:
         return conn.execute(sql, params).fetchall()
+
+
+def count_sponsor_events() -> int:
+    """How many distinct events have a sponsor — the second chip on /sponsors.
+
+    Counted in SQL rather than from the grouped rows, because with a page of
+    sponsors the groups on screen are the events ON THIS PAGE, not the events
+    that have sponsors at all."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT COUNT(DISTINCT event_id) FROM sponsors"
+        ).fetchone()[0]
+
+
+def count_sponsors(event_id: int | None = None) -> int:
+    """How many sponsors the same filter matches. No GROUP BY here: the list
+    groups to tally each sponsor's package, but the number of ROWS is the
+    number of sponsors either way."""
+    sql = "SELECT COUNT(*) FROM sponsors s"
+    params: list[object] = []
+    if event_id is not None:
+        sql += " WHERE s.event_id = ?"
+        params.append(event_id)
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchone()[0]
 
 
 def get_sponsor(sponsor_id: int) -> sqlite3.Row | None:
@@ -1354,13 +1447,30 @@ def create_inbox_attachment(inbox_id: int, filename: str, content_type: str,
 def count_needs_attention() -> int:
     """The nav badge: incoming mail not yet dealt with.
 
-    Two populations, and the difference matters. An ATTACHED reply counts until
-    it is read. An UNASSIGNED one counts until it is assigned, read or not,
-    because reading it does not put it anywhere.
+    Two populations, and the difference matters. A FULLY PLACED reply — one
+    carrying both a batch and a vendor — counts until it is read. A HELD one
+    counts until it is placed, read or not, because reading it does not put it
+    anywhere.
 
-    Tier 4 is excluded on purpose. Unmatched mail is not "not yet dealt with",
-    it is mail we could not place, and a number that never goes down stops
-    being read at all.
+    Placement, not tier, is what the clauses below test, and that is what keeps
+    this in step with list_unassigned. A tier 2 whose code named a batch but
+    whose sender was not one of its vendors is held, not placed: it used to be
+    counted here as an attached reply while appearing on no page at all, so the
+    badge named a number nothing could clear.
+
+    Tier 4 is excluded on purpose, and stays excluded now that it shares the
+    one "needs assigning" list with tier 3 rather than sitting in a table of
+    its own. It is assignable, but it is not mail anyone is waiting on: a code
+    from a deleted batch or a mangled forward may never be placeable at all,
+    nothing in the UI deletes an inbox row, and a number that never goes down
+    stops being read. The list shows it; the badge does not count it.
+
+    A tier 3 whose vendor sits in NO batch is excluded for the same reason as
+    tier 4, and it is the same shape of problem: the chooser has nothing to
+    offer, so no click finishes the row. It stays in the list, where the page
+    says plainly why it cannot be placed; it does not sit in the badge forever.
+    The honest remedy is to write that vendor into a batch, which is not
+    something this screen can do.
 
     Auto-replies are excluded for a different reason: an out-of-office is not
     something anyone has to act on. Counting it would put a number on the nav
@@ -1370,8 +1480,19 @@ def count_needs_attention() -> int:
         row = conn.execute(
             """SELECT COUNT(*) AS n FROM inbox
                 WHERE auto_reply = 0
-                  AND ((tier IN (1, 2) AND read_at IS NULL)
-                       OR (tier = 3 AND request_id IS NULL))"""
+                  AND (
+                    -- placed: both columns filled. Counts until read.
+                    (request_id IS NOT NULL AND vendor_id IS NOT NULL
+                     AND read_at IS NULL)
+                    -- held, missing only a vendor: the batch is known, so the
+                    -- chooser has something to offer. Counts until placed.
+                    OR (request_id IS NOT NULL AND vendor_id IS NULL)
+                    -- held, missing a batch: only when that vendor is in one,
+                    -- or nothing on the page can ever clear the row.
+                    OR (tier = 3 AND request_id IS NULL
+                        AND EXISTS (SELECT 1 FROM outbox o
+                                     WHERE o.vendor_id = inbox.vendor_id))
+                  )"""
         ).fetchone()
     return row["n"]
 
@@ -1379,9 +1500,14 @@ def count_needs_attention() -> int:
 def replies_by_vendor(request_id: int) -> dict:
     """{vendor_id: [reply rows]} for one batch's outbox table, newest first.
 
-    Keyed by vendor rather than by outbox row so a reply attached to the batch
-    but not to a specific row is still reachable — tier 2 without a sender
-    match resolves the batch only."""
+    Keyed by vendor rather than by outbox row, so a reply attached to the batch
+    and to a vendor but not to a specific outbox row still lands on that
+    vendor.
+
+    `vendor_id IS NOT NULL` is a real exclusion, not a formality: a reply with
+    a batch and no vendor has no row here to sit on. Those are held in
+    list_unassigned until someone names the vendor, rather than being dropped
+    on the floor as they once were."""
     with closing(get_conn()) as conn:
         rows = conn.execute(
             """SELECT * FROM inbox
@@ -1440,66 +1566,215 @@ def mark_reply_read(reply_id: int) -> None:
         conn.commit()
 
 
-def assign_reply(reply_id: int, request_id: int) -> bool:
+def assign_reply(reply_id: int, request_id: int,
+                 vendor_id: int | None = None) -> bool:
     """Attach a held reply to a batch by hand. Returns True when it moved.
 
     tier IS NOT IN THE SET LIST, and that is the rule rather than an oversight.
     tier records how the message was matched, which is history: a reply that
-    could only be matched by sender stays a tier 3 forever, and "needs
-    assigning" is `tier = 3 AND request_id IS NULL` rather than a status that
-    flips. Without that, a hand-assigned reply is indistinguishable from one
-    the ladder resolved, and the honest answer looks like a bug.
+    could only be matched by sender stays a tier 3 forever, and a reply nothing
+    could place stays a tier 4, so "needs assigning" is `request_id IS NULL`
+    rather than a status that flips. Without that, a hand-assigned reply is
+    indistinguishable from one the ladder resolved, and the honest answer looks
+    like a bug.
 
-    outbox_id is filled in the same statement when the vendor is actually in
-    the chosen batch, so the reply lands on the right row of the outbox table
-    rather than only on the batch."""
+    vendor_id is the caller's answer for a reply that has none of its own — a
+    tier 4, where the ladder could not name the sender either. Writing it is
+    what keeps the assignment from vanishing: replies_by_vendor and progress()
+    both filter `vendor_id IS NOT NULL`, so a reply attached to a batch with no
+    vendor would leave this page and appear on no other. It is never allowed to
+    overwrite a vendor the ladder already resolved.
+
+    outbox_id is filled in the same statement, so the reply lands on the right
+    row of the outbox table rather than only on the batch."""
     with closing(get_conn()) as conn:
         conn.execute("BEGIN IMMEDIATE")
         baris = conn.execute(
             "SELECT vendor_id, request_id FROM inbox WHERE id = ?", (reply_id,)
         ).fetchone()
-        if baris is None or baris["request_id"] is not None:
-            # Already assigned, or gone. Not an error — two clicks on the same
-            # chooser is the ordinary way this happens.
+        if baris is None or (baris["request_id"] is not None
+                             and baris["vendor_id"] is not None):
+            # Already fully placed, or gone. Not an error — two clicks on the
+            # same chooser is the ordinary way this happens.
+            #
+            # BOTH columns, not request_id alone: a tier 2 whose code resolved
+            # the batch but whose sender was not one of its vendors arrives
+            # here with request_id already set and vendor_id still NULL, and
+            # that is precisely the row this function has to be able to finish.
+            # Guarding on request_id alone refused it outright.
             conn.commit()
             return False
 
+        # What the ladder found wins; the argument only fills a gap.
+        vendor = baris["vendor_id"] if baris["vendor_id"] is not None else vendor_id
+
         kotak = conn.execute(
             "SELECT id FROM outbox WHERE request_id = ? AND vendor_id = ?",
-            (request_id, baris["vendor_id"]),
+            (request_id, vendor),
         ).fetchone()
 
         cur = conn.execute(
-            "UPDATE inbox SET request_id = ?, outbox_id = ? WHERE id = ?",
-            (request_id, kotak["id"] if kotak else None, reply_id),
+            "UPDATE inbox SET request_id = ?, outbox_id = ?, vendor_id = ? "
+            "WHERE id = ?",
+            (request_id, kotak["id"] if kotak else None, vendor, reply_id),
         )
         conn.commit()
         return cur.rowcount > 0
 
 
 def list_unassigned() -> list[sqlite3.Row]:
-    """Replies held for a human decision: matched to a vendor and nothing else.
+    """Every reply held for a human decision, newest first.
 
-    Tier 3 never attaches on its own, and that is the whole point — one vendor
-    working two concurrent events cannot be told apart by their address, and
-    concurrent events are normal here."""
+    Two tiers land here and the difference is how much the ladder could name.
+    Tier 3 knows the sender and nothing else — it never attaches on its own,
+    because one vendor working two concurrent events cannot be told apart by
+    their address, and concurrent events are normal here. Tier 4 got past the
+    gate and resolved to nothing: a well-formed code naming no batch, from an
+    address that is not a vendor.
+
+    They share one list because they share one remedy — a person says where the
+    reply belongs. tier rides along so the table can say which case a row is.
+
+    THE PREDICATE IS "SOMETHING IS MISSING", not a list of tiers, and that is
+    what makes it complete. A third case used to fall through every page: a
+    tier 2 whose code named a batch but whose sender was not one of that
+    batch's vendors — `request_id` set, `vendor_id` NULL. It was absent from
+    this list (which asked for `request_id IS NULL`), absent from
+    replies_by_vendor and progress() (which both filter `vendor_id IS NOT
+    NULL`), and yet counted by the nav badge, so the badge named a number no
+    page could show and no click could clear.
+
+    Written this way the three cases fall out on their own — tier 3 is missing
+    a batch, tier 4 is missing both, tier 2-without-a-sender is missing a
+    vendor — and a tier 1, which always carries an outbox row and therefore
+    both columns, can never appear here."""
     with closing(get_conn()) as conn:
         return conn.execute(
             """SELECT i.*, v.nama_pt
                  FROM inbox i
                  LEFT JOIN vendors v ON v.id = i.vendor_id
-                WHERE i.tier = 3 AND i.request_id IS NULL
+                WHERE i.request_id IS NULL OR i.vendor_id IS NULL
                 ORDER BY i.received_at DESC, i.id DESC"""
         ).fetchall()
 
 
-def list_unmatched() -> list[sqlite3.Row]:
-    """Replies that got past the gate and resolved to nothing: a well-formed
-    code naming no batch, from an address that is not a vendor. Read-only —
-    there is nothing to choose from, so there is no chooser."""
+def set_reply_approved(reply_id: int, approved: bool) -> bool:
+    """Accept or un-accept one quote. Returns True when it moved.
+
+    Refused unless the reply is fully placed and is not a generated one: a row
+    with no batch or no vendor names no pair to accept, and nobody agrees terms
+    with an out-of-office.
+
+    Un-approving is refused once an SPK exists for that pair. The document has
+    a nomor allocated to it and is on the books (invariant 12); withdrawing the
+    agreement it rests on would leave an issued work order with nothing behind
+    it. Cancelling a real SPK is a decision this screen does not model."""
+    with closing(get_conn()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        baris = conn.execute(
+            """SELECT request_id, vendor_id, auto_reply, approved_at
+                 FROM inbox WHERE id = ?""",
+            (reply_id,),
+        ).fetchone()
+        if (baris is None or baris["auto_reply"]
+                or baris["request_id"] is None or baris["vendor_id"] is None):
+            conn.commit()
+            return False
+
+        if not approved:
+            sudah = conn.execute(
+                "SELECT 1 FROM spk WHERE request_id = ? AND vendor_id = ?",
+                (baris["request_id"], baris["vendor_id"]),
+            ).fetchone()
+            if sudah is not None:
+                conn.commit()
+                return False
+
+        # Stamped in SQL, the way read_at is, so both timestamps come off the
+        # same clock and neither depends on the caller's.
+        cur = conn.execute(
+            "UPDATE inbox SET approved_at = datetime('now', 'localtime') "
+            "WHERE id = ?" if approved else
+            "UPDATE inbox SET approved_at = NULL WHERE id = ?",
+            (reply_id,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def spk_exists_for(request_id: int, vendor_id: int) -> bool:
+    """Whether this pair already has a work order — what decides if an
+    approval is still withdrawable."""
     with closing(get_conn()) as conn:
         return conn.execute(
-            "SELECT * FROM inbox WHERE tier = 4 ORDER BY received_at DESC, id DESC"
+            "SELECT 1 FROM spk WHERE request_id = ? AND vendor_id = ?",
+            (request_id, vendor_id),
+        ).fetchone() is not None
+
+
+def vendors_approved(request_id: int) -> set[int]:
+    """Vendors on this batch whose quote a person ACCEPTED — the gate an SPK
+    has to pass.
+
+    Replying is not agreeing. The gate was `vendors_who_replied` for a while
+    and that let a work order be issued to anyone who sent anything back,
+    including a vendor whose price was rejected. Acceptance is now its own act,
+    recorded in inbox.approved_at, and it can only be performed from the reply
+    detail page — which stamps read_at on the way in, so nothing can be
+    accepted unread.
+
+    Before that the gate was narrower still and wrong: `tier IN (3, 4)`, only a
+    reply a person had assigned by hand. A tier 1 or 2 reply attaches itself
+    and has no Assign action anywhere, so every normally matched vendor was
+    locked out permanently. Do not reintroduce it.
+
+    HOW the reply was placed does not matter. It briefly did: the gate was
+    `tier IN (3, 4)`, meaning only a reply a person assigned by hand counted.
+    That turned out to be a dead end rather than a stricter rule — a tier 1 or
+    2 reply attaches itself, so it never passes through the chooser and there
+    is no Assign action anywhere that could make it qualify. Every normally
+    matched vendor was locked out permanently, which is the ordinary case, and
+    the only vendors that could be issued an SPK were the ones whose replies
+    the ladder had FAILED to place. Exactly backwards.
+
+    auto_reply = 0 is belt and braces — set_reply_approved refuses to stamp a
+    generated message in the first place — and vendor_id IS NOT NULL keeps a
+    reply that resolved a batch but no sender out: it names no vendor, so it
+    cannot vouch for one."""
+    with closing(get_conn()) as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT vendor_id FROM inbox
+                WHERE request_id = ? AND vendor_id IS NOT NULL
+                  AND auto_reply = 0 AND approved_at IS NOT NULL""",
+            (request_id,),
+        ).fetchall()
+    return {r["vendor_id"] for r in rows}
+
+
+def outbox_targets(request_id: int | None = None) -> list[sqlite3.Row]:
+    """Every (batch, vendor) pair a reply could be assigned to — the chooser
+    for a reply the ladder could not fully place.
+
+    Rows of outbox rather than of requests, and that is the point: picking a
+    batch alone would leave vendor_id NULL and the reply invisible everywhere
+    downstream. One pick answers both questions at once.
+
+    request_id narrows it to one batch, for the case where the code already
+    resolved the batch and only the vendor is in question. The rows have the
+    same shape either way, so the template renders one option list and does not
+    branch."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            """SELECT r.id, r.kode, e.judul_acara, c.nama AS kategori,
+                      o.vendor_id, v.nama_pt
+                 FROM outbox o
+                 JOIN requests r ON r.id = o.request_id
+                 JOIN events e ON e.id = r.event_id
+                 JOIN categories c ON c.id = r.category_id
+                 JOIN vendors v ON v.id = o.vendor_id
+                WHERE (? IS NULL OR r.id = ?)
+                ORDER BY r.id DESC, v.nama_pt""",
+            (request_id, request_id),
         ).fetchall()
 
 

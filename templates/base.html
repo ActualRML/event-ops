@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Vendor RFQ Blast{% endblock %}</title>
+  <title>{% block title %}{{ merek }}{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -683,6 +683,36 @@
        is hidden here.
        px throughout, per the units rule. In print 96px is one inch, so the
        numbers stay as literal as they are on screen. */
+    /* ---- Pager --------------------------------------------------------
+       One row under a list table: the range on the left, the page-size
+       choices and the arrows on the right. 16px above, matching the gap a
+       controls row leaves above a table. Wraps to two lines under 620px
+       rather than squeezing, since three groups on one narrow line collide. */
+    .penomoran { display: flex; align-items: center; justify-content: space-between;
+                 flex-wrap: wrap; gap: 10px 20px; margin-top: 16px;
+                 font-size: 14px; color: var(--pico-muted-color); }
+    .penomoran-ukuran, .penomoran-arah { display: flex; align-items: center; gap: 8px; }
+    /* The current size is not a link and must not look like one: same weight
+       and colour as a chip value, so the row reads as "25 of 10 25 50". */
+    .penomoran-kini { font-weight: 500; color: var(--teks-gelap); }
+    .penomoran-posisi { font-variant-numeric: tabular-nums; }
+    /* Standard 34px control metrics, NOT .btn-mini: 32px is for table rows
+       only and this row is not one. Written out rather than inherited because
+       Pico sizes an <a role=button> from 1rem — 20px at desktop widths — which
+       rendered these half again too tall, and gives every button a 20px
+       bottom margin that pushed the row off-centre. Both are reset here.
+       Fixed width so the row does not jump as the labels swap for text. */
+    .penomoran-arah :is(a[role=button], .penomoran-mati) {
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 34px; min-width: 88px; padding: 0 14px; margin-bottom: 0;
+        font-size: 14px; border-radius: 5px; }
+    /* Ends of the range: same box as the buttons beside them so the row keeps
+       its height at page 1, but inert and clearly so. */
+    .penomoran-mati { opacity: .45; cursor: not-allowed; }
+    @media (max-width: 620px) {
+      .penomoran { justify-content: flex-start; }
+    }
+
     @media print {
       /* 48px = half an inch on every edge. */
       @page { margin: 48px; }
@@ -799,7 +829,7 @@
   <header class="bilah">
     <nav class="container">
       <ul>
-        <li class="merek">Vendor RFQ Blast</li>
+        <li class="merek">{{ merek }}</li>
         <li>
           {# Pico v2's native disclosure dropdown. No script: the open and close
              are the browser's own <details> behaviour. #}
@@ -833,9 +863,32 @@
 
   <footer class="kaki">
     <div class="kaki-isi">
-      <span>Vendor RFQ Blast · {{ tahun }}</span>
-      <span>Internal procurement tool</span>
+      <span>{{ merek }} · {{ tahun }}</span>
+      <span>Internal event operations tool</span>
     </div>
   </footer>
+
+  {# The app's only behaviour script, and it does one thing: clicking anywhere
+     in a date field opens the calendar, not just the small icon at its right
+     edge. Native <input type="date"> only reacts to the icon, which is a
+     ~16px target nobody aims for.
+
+     Delegated from document rather than bound per input, so it covers every
+     date field on every page including any htmx swaps in later, and so there
+     is ONE copy of it. It lived inline in send.html and was about to be
+     copy-pasted into event_form.html — two copies of eight lines is exactly
+     the drift the one-style-block rule exists to avoid.
+
+     showPicker needs a user gesture and this click is one. Browsers without
+     it are unaffected and still open the calendar through the icon. #}
+  <script>
+    document.addEventListener('click', function (e) {
+      const input = e.target;
+      if (!(input instanceof HTMLInputElement) || input.type !== 'date') return;
+      if (typeof input.showPicker !== 'function') return;
+      // Already open (the click landed on the icon) throws InvalidStateError.
+      try { input.showPicker(); } catch (err) { /* ignore */ }
+    });
+  </script>
 </body>
 </html>

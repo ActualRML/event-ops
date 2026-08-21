@@ -15,6 +15,13 @@ quality. Optimize for something demonstrable, not something maintainable.
 - Pico.css v2, HTMX 2.0.4 and the Inter webfont, all three via CDN, with
   --pico-font-family repointed at Inter. All custom CSS is one <style>
   block in base.html — no .css files, no Tailwind, no React, no build step.
+  App-wide behaviour scripts follow the same rule: one <script> block at the
+  end of base.html, delegated from document so it covers htmx swaps too. It
+  holds exactly one thing — clicking anywhere in an <input type="date"> opens
+  the calendar rather than only its ~16px icon. Page-specific scripts stay on
+  their page (send.html has the vendor picker); anything two pages would both
+  want goes in base.html instead of being copied, for the same reason the CSS
+  does.
 - CSS class names are Indonesian by convention (.baris-vendor,
   .metrik-kartu, .form-kirim). This is deliberate and uniform — do not
   rename them piecemeal.
@@ -82,11 +89,13 @@ Language — the split is by audience, not by file:
 
 ## Layout
 
-    main.py          app object, Jinja filters, static mount, router includes
-    deps.py          templates, parse_ids, parse_harga — what more than one
-                     router needs. parse_harga takes label, allow_zero and
-                     contoh (the "not a number" example, so the same parse
-                     also serves a quantity field), capped at terbilang.MAKS
+    main.py          app object, Jinja filters and globals (merek, tahun,
+                     perlu_perhatian), static mount, router includes
+    deps.py          templates, parse_ids, parse_harga, parse_halaman,
+                     query_ganti — what more than one router needs.
+                     parse_harga takes label, allow_zero and contoh (the "not
+                     a number" example, so the same parse also serves a
+                     quantity field), capped at terbilang.MAKS
     tasks.py         SEND_TASKS, dispatch_batch, schedule_batch (phase B)
     replies.py       the reply check: IMAP fetch, gate, match ladder, store.
                      tasks.py's peer — see Import direction
@@ -187,11 +196,19 @@ started from the project root and the uvicorn command is unchanged.
 core/renderer.py is the one exception: it resolves email_templates/ from
 __file__, and therefore climbs one level out of the package.
 
+The product name lives in ONE place: `templates.env.globals["merek"]` in
+main.py. It is in the header, the footer and the suffix of every page title,
+and it used to be typed out in all twenty-two of them — so renaming the app
+meant editing twenty-two files and missing one. Write `{{ merek }}`, never the
+name. Four pages carry no suffix at all and name their record instead
+(rundown.html, spk_form.html, sponsor_print.html, tracker_detail.html); that
+predates the global and is left alone.
+
 Template filenames are English, and the shape says what the page is:
 
     {plural}.html            a list page      vendors.html, items.html,
                                               sponsors.html, events.html,
-                                              tracker.html, replies.html
+                                              tracker.html
     {singular}_form.html     a record form    vendor_form.html, item_form.html,
                                               sponsor_form.html, event_form.html,
                                               category_form.html, spk_form.html
@@ -293,17 +310,38 @@ per-event or per-batch with no top-level list, and are reached from
 Tracker. The rundown does light Events in the trigger, since it lives
 under /events/{id}; that is the same parent-lighting `/categories` gets.
 
-Replies get no entry either, for the same reason and one more: the question
-they answer — who has not replied yet — is a fact about a batch, so they live
-under /tracker/replies and light Tracker. A top-level entry would make them a
-second inbox, which is the thing this feature is built not to be.
+Replies get no entry either, and no LIST PAGE at all. There was a
+/tracker/replies once and it is deleted: /tracker already carried the check
+button, the last-checked chip and the failure banner, so the page repeated all
+three, and on a mailbox where matching works it was empty every single time.
+The one thing only it had — the replies the ladder could not place — is now a
+section on /tracker rendered only when the list is non-empty, so a healthy run
+shows nothing and a failed match is impossible to miss.
+
+Do not rebuild it. The question these pages answer — who has not replied yet —
+is a fact about a batch, so it belongs on the batch page; a list of its own is
+the second inbox this feature exists not to be. What survives under
+/tracker/replies/ is the DETAIL page, where a reply is assigned and approved,
+plus the check POST and the attachment route. `GET /tracker/replies` is a bare
+307 to /tracker, kept only because without a handler the path falls through to
+/tracker/{request_id} and 422s on int conversion, which is a worse answer to an
+old bookmark than a redirect.
 
 The drawer trigger carries a count of incoming mail not yet dealt with:
 unread attached replies plus everything waiting to be assigned. On the TRIGGER,
 not only on the panel entry, because the panel is collapsed by default and a
-number nobody can see is not a badge. Tier 4 is excluded — unmatched mail is
-not waiting to be dealt with, and a number that never goes down stops being
-read. The count comes from `perlu_perhatian()`, a Jinja global wired in
+number nobody can see is not a badge.
+
+The badge counts by PLACEMENT, not by tier: a reply carrying both a batch and
+a vendor counts until it is read, one missing either counts until it is
+placed. Two kinds are shown in the list and deliberately left out of the
+count, on one rule — a row no click on that page can finish must not sit in
+the badge forever, because a number that never goes down stops being read.
+Those are a reply matching no batch at all (tier 4: a deleted batch, a mangled
+forward, a code from another install), and a tier 3 whose vendor is in no
+batch, whose chooser therefore has nothing to offer. The honest remedy for the
+second is to write that vendor into a batch, which is not something that
+screen can do. The count comes from `perlu_perhatian()`, a Jinja global wired in
 main.py: a callable, because base.html renders on every page and a value read
 at startup would be stale on the second load.
 
@@ -380,7 +418,8 @@ inbox(id PK, message_id TEXT NOT NULL UNIQUE, from_email NOT NULL, from_nama,
       tier INTEGER NOT NULL CHECK(tier IN (1,2,3,4)),
       request_id FK ON DELETE CASCADE, outbox_id FK ON DELETE CASCADE,
       vendor_id FK, read_at, created_at,
-      auto_reply INTEGER NOT NULL DEFAULT 0 CHECK(auto_reply IN (0,1)))
+      auto_reply INTEGER NOT NULL DEFAULT 0 CHECK(auto_reply IN (0,1)),
+      approved_at TEXT — the SPK gate; see invariant 14)
 
 inbox_attachment(id PK, inbox_id FK ON DELETE CASCADE, filename NOT NULL,
                  content_type NOT NULL, size_bytes CHECK(size_bytes >= 0),
@@ -668,6 +707,45 @@ shape of guarantee the sponsor print route has about cost.
     formatting and terbilang are presentation concerns.
 14. One SPK per (request_id, vendor_id). Re-issuing means editing the
     existing row, not creating a second.
+
+    An SPK is issued ONLY to a vendor whose quote a person APPROVED —
+    inbox.approved_at, gathered by db.vendors_approved. REPLYING IS NOT
+    AGREEING: a vendor who answered and was turned down never opens the gate.
+
+    Approving is its own act with its own button, on the reply detail page and
+    nowhere else. That placement does two jobs. The price is in front of you
+    when you accept it, and opening that page has already stamped read_at — so
+    "cannot be approved unread" is guaranteed by where the button is rather
+    than by a check that could be forgotten. The chain is: place the reply if
+    the ladder could not (Assign), read it, approve it, then issue.
+
+    Assign and Approve are different questions and must not be conflated.
+    Assign answers "which batch and vendor is this?" — a technical repair, only
+    ever offered for a reply the ladder failed to place. Approve answers "do we
+    accept this offer?" — a business decision, offered on every placed reply.
+
+    An approval is withdrawable until an SPK exists for that pair, and refused
+    after: the document has a nomor and is on the books (invariant 12), and
+    cancelling a real work order is not something this screen models.
+
+    Two earlier gates are recorded here as dead ends, not as stricter rules:
+
+    - `tier IN (3, 4)` — only a hand-assigned reply. A tier 1 or 2 attaches
+      itself, never passes through the chooser, and has no Assign action
+      anywhere, so every normally matched vendor was locked out PERMANENTLY
+      while the only ones qualifying were those the ladder had FAILED to place.
+    - any reply at all — no way to express "this vendor answered and we said
+      no", so a rejected price still opened the gate.
+
+    All of these close the original rule that the action was offered on every
+    row so a vendor who won the job by phone could still be issued one. That
+    escape hatch stays closed: no approval, no SPK, no override in the UI.
+
+    The gate lives in routes/spk.py's muat_spk, which the form, the save and
+    the download all pass through, so the three cannot drift; hiding the table
+    button is the courtesy and the 403 is the guarantee. `boleh_spk` must be in
+    BOTH contexts that render _progress.html — tracker_detail and
+    send_progress — or the poll's last swap reopens every button.
 15. Money on a sold line never moves. sponsor_item.cost and .value are
     copied from the catalog when the line is created and are never read
     from items again — not to display it, not to edit it, not in any
@@ -711,8 +789,18 @@ shape of guarantee the sponsor print route has about cost.
     there, so a rate cannot be changed for the maths and missed on the form.
 18. A reply's tier is HISTORY and is never rewritten. inbox.tier records how
     the message was matched; assigning a held reply by hand fills request_id
-    and outbox_id and leaves tier standing. So "needs assigning" is
-    `tier = 3 AND request_id IS NULL`, not a status that flips.
+    and outbox_id — and vendor_id when the reply had none — and leaves tier
+    standing. So "needs assigning" is `request_id IS NULL OR vendor_id IS
+    NULL` — SOMETHING IS MISSING, not a list of tiers — and never a status that
+    flips. A reply the ladder could not place stays a tier 4 forever even after
+    a human puts it on a batch.
+
+    Written as a tier list it was wrong, and silently: a tier 2 whose code
+    named a batch but whose sender was not one of its vendors carries a
+    request_id and a NULL vendor_id. It matched no page — not the held list,
+    not replies_by_vendor, not progress() — while the badge counted it, so the
+    badge named a number nothing on any screen could clear. Ask what a row is
+    MISSING, and the cases enumerate themselves.
 
     This is invariant 17's shape with a different input: store what produced
     the outcome, so a hand-assigned reply stays distinguishable from one the
@@ -722,7 +810,37 @@ shape of guarantee the sponsor print route has about cost.
 
     Tier 3 NEVER attaches on its own, and that is the point rather than
     caution: one vendor working two concurrent events cannot be told apart by
-    their address, and concurrent events are normal here.
+    their address, and concurrent events are normal here. Tier 4 does not
+    either, for the stronger reason that it has no vendor at all.
+
+    Every incompletely placed reply is held in ONE list, the held section on
+    /tracker, because they share one remedy — a person says where it belongs.
+    What differs is which half is missing, and therefore which chooser opens:
+
+    - missing a batch (tier 3) — offered that vendor's own batches, since the
+      only open question is which of THEIR conversations this answers
+    - missing a vendor (tier 2, code resolved, sender not in that batch) —
+      offered that ONE batch's vendors. The batch is settled and is not up for
+      revision: a posted batch that is not the reply's own is refused
+    - missing both (tier 4) — offered every (batch, vendor) pair
+
+    A pair rather than a batch, always, because picking a batch alone leaves
+    vendor_id NULL and replies_by_vendor and progress() both filter that out:
+    the reply would leave the Replies page and appear on no other. Assignment
+    fills vendor_id in exactly these cases and never overwrites one the ladder
+    resolved.
+
+    The pair choosers are GROUPED by batch with <optgroup>, not flattened: the
+    options are batches × vendors, so a flat list repeats the batch name on
+    every row and, for a tier 4, is offered every pair there is. Grouped rather
+    than truncated, deliberately — a cap on recent batches would drop
+    legitimate targets, since codes are unique across all time precisely
+    because a vendor may answer a six-month-old thread. Note that Jinja's
+    groupby SORTS by its key and so undoes the query's newest-first order; the
+    `| reverse` after it is load-bearing, not decoration.
+
+    The chooser is gated on what is missing, NOT on `request_id is none` — the
+    missing-a-vendor case has a request_id and still needs the form.
 
 20. A generated reply is RECORDED and not COUNTED. inbox.auto_reply is set
     from headers, and the row is stored, listed and openable like any other —
@@ -1045,6 +1163,46 @@ applying. Measure the rendered box before assuming a value took.
 Disabled: `opacity: .45; cursor: not-allowed; filter: grayscale(35%)`.
 `.btn-qty` uses it for real: the − is disabled at qty 1, and is never the
 control that removes a line.
+
+### Pagination
+
+Every list page is paged — /vendors, /items, /sponsors, /events, /tracker —
+through one mechanism, and there is no second one.
+
+`deps.parse_halaman(per, page, total)` takes the two query params and a count
+and returns the dict the pager renders from. Both params come off the URL and
+are treated as hostile: a `per` outside `PER_PILIHAN` (10, 25, 50) falls back
+to 25, and a page below one or past the end is CLAMPED, never 404'd — a
+bookmark to page 9 of a list that has shrunk should show the last page, since
+a page is a window onto a resource rather than a resource that can be missing.
+
+The order is COUNT, then parse, then fetch: the clamp cannot be applied before
+the total is known. Every `list_*` takes `limit`/`offset` defaulting to
+None/0, so the callers that must see everything — /send's vendor picker and
+its event select — are unaffected by leaving them out.
+
+**A count is a SQL question, never `rows|length`.** Every chip that reports a
+total reads a `count_*`; summing the fetched rows was exact only while every
+row was fetched, and with a page of 25 out of 120 it reports the page and calls
+it the table. /vendors goes further and shares `_saring_vendor` between its
+list and its count, so the filter cannot drift between "of 120" and the 120.
+
+`_pagination.html` renders only when `total` exceeds the smallest page size:
+below that every control on it is dead, and a pager on a six-row table is
+furniture. Links are plain `<a>` — paging is a deliberate click and a full
+repaint is honest — and `deps.query_ganti(request, **ubah)` keeps the rest of
+the query, so page 2 of a search stays page 2 of THAT search. Changing the
+page size drops `page` rather than setting it to 1.
+
+On /vendors the pager rides OUT OF BAND with the table, the same mechanism
+`_vendor_stats.html` uses and for the same reason: the swap target is the
+`<table>` itself, a pager cannot live inside one, and a pager left behind after
+a search would still link to pages of the previous query.
+
+The pager's buttons are 34px, not `.btn-mini` — 32px is for table rows only.
+Pico sizes an `<a role=button>` from 1rem (20px at desktop widths) and gives
+every button a 20px bottom margin; both are reset explicitly, or the row
+renders half again too tall and off-centre.
 
 ### Tables
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Reply from {{ balasan.from_nama or balasan.from_email }} — Vendor RFQ Blast{% endblock %}
+{% block title %}Reply from {{ balasan.from_nama or balasan.from_email }} — {{ merek }}{% endblock %}
 
 {% block content %}
 {% set label_tier = {1: "matched by thread", 2: "matched by code",
@@ -14,6 +14,9 @@
     <span class="chip">{{ label_tier.get(balasan.tier, "unknown") }}</span>
     {% if balasan.auto_reply %}
     <span class="chip">automatic — not counted</span>
+    {% endif %}
+    {% if balasan.approved_at %}
+    <span class="chip">approved <span class="chip-angka">{{ balasan.approved_at | datetime }}</span></span>
     {% endif %}
     {% if balasan.judul_acara %}
     <span class="chip">batch <span class="chip-angka">{{ balasan.judul_acara }}</span></span>
@@ -32,24 +35,80 @@
 </article>
 {% endif %}
 
-{% if balasan.request_id is none and balasan.vendor_id is not none %}
-{# The one-click chooser. Only this vendor's own batches are offered: the
-   decision is which of THEIR conversations this answers, and listing batches
-   they were never written to turns a two-item choice into a scrolling list. #}
+{% if mode %}
+{# The one-click chooser, in three shapes.
+
+   Gated on `mode`, which the route sets when something is missing — NOT on
+   request_id being empty. A reply whose code resolved the batch but whose
+   sender is unknown HAS a request_id and still needs this form; guarding on
+   request_id skipped it and left the row unfinishable.
+
+   When the ladder named the vendor, only that vendor's own batches are
+   offered: the decision is which of THEIR conversations this answers, and
+   listing batches they were never written to turns a two-item choice into a
+   scrolling list.
+
+   When it did not — a tier 4 — the sender is unknown too, so one pick has to
+   answer both questions. The options are outbox rows, which ARE the (batch,
+   vendor) pairs, and the value carries both. Picking a batch alone would leave
+   vendor_id NULL, and replies_by_vendor and progress() both filter that out:
+   the reply would leave this page and appear on no other. #}
 <section>
   <h3>Assign to a batch</h3>
   {% if pilihan %}
   <form method="post" action="/tracker/replies/{{ balasan.id }}/assign"
         class="form-rapat form-vendor">
     <label>
-      Batch
+      {{ {"batch": "Batch", "vendor": "Vendor", "both": "Batch and vendor"}[mode] }}
       <select name="request_id">
+        {# One field in every shape, so the route has one value to parse: a
+           bare batch id when only the batch is in question, "batch:vendor"
+           when the vendor is. #}
+        {% if mode == "batch" %}
         {% for p in pilihan %}
         <option value="{{ p.id }}">
           {{ p.judul_acara }} · {{ p.kategori }}{% if p.kode %} · [RFQ-{{ p.kode }}]{% endif %}
         </option>
         {% endfor %}
+        {% else %}
+        {# Grouped by batch, not flat. The options are (batch, vendor) pairs,
+           so a flat list repeats the batch name on every row and grows as
+           batches × vendors — the exact "scrolling list" batches_for_vendor
+           warns about, and unbounded for a tier 4, which is offered every
+           pair there is.
+
+           Grouped rather than TRUNCATED, deliberately. Capping to the last N
+           batches would drop legitimate targets: codes are unique across all
+           time precisely because a vendor may answer a six-month-old thread,
+           so the old batch has to stay pickable. The fix is structure — the
+           batch named once as a heading, vendors under it — not a shorter
+           list. An <optgroup> also gives the native select its own scrolling
+           and type-ahead, with no script. #}
+        {# | reverse is load-bearing: Jinja's groupby SORTS by the key, so it
+           silently undoes the query's ORDER BY r.id DESC and hands back the
+           oldest batch first. The newest is the one a reply most likely
+           answers, so it belongs at the top. #}
+        {% for _, opsi in pilihan | groupby("id") | reverse %}
+        <optgroup label="{{ opsi[0].judul_acara }} · {{ opsi[0].kategori }}{% if opsi[0].kode %} · [RFQ-{{ opsi[0].kode }}]{% endif %}">
+          {% for p in opsi %}
+          <option value="{{ p.id }}:{{ p.vendor_id }}">{{ p.nama_pt }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+        {% endif %}
       </select>
+      {% if mode == "vendor" %}
+      <small>
+        The subject code named the batch, but the sender is not one of its
+        vendors — a forward, or a reply from a different address. Only the
+        vendor is being chosen; the batch is already settled.
+      </small>
+      {% elif mode == "both" %}
+      <small>
+        Nothing in this reply said who sent it or which batch it answers, so
+        both are being chosen by hand. The tier stays on the record either way.
+      </small>
+      {% endif %}
     </label>
     <div class="baris-aksi">
       <button type="submit">Assign</button>
@@ -57,9 +116,57 @@
   </form>
   {% else %}
   <p class="redup">
+    {% if mode == "batch" %}
     This vendor has not been written to on any batch, so there is nothing to
-    assign this reply to.
+    assign this reply to — and nothing on this page can change that. Send them
+    an RFQ and this reply can be placed on it. It is left out of the menu badge
+    meanwhile, because no click here would clear it.
+    {% else %}
+    No batch has been sent yet, so there is nothing to assign this reply to.
+    {% endif %}
   </p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if bisa_approve %}
+{# The decision this whole screen leads up to, and the only thing that opens
+   the SPK gate. It sits HERE, under the quote and its attachments, rather than
+   on the tracker table: accepting a price should be done with the price in
+   front of you, and opening this page has already stamped read_at, so nothing
+   can be accepted unread without a check for it existing. #}
+<section>
+  <h3>Decision</h3>
+  {% if balasan.approved_at %}
+  <article>
+    <strong>This quote is approved.</strong>
+    Accepted {{ balasan.approved_at | datetime }}. An SPK can now be issued to
+    {{ balasan.nama_pt or "this vendor" }} on this batch.
+  </article>
+  {% if spk_terbit %}
+  <p class="redup">
+    An SPK has been issued against this approval, so it can no longer be
+    withdrawn — the document carries a nomor and is on the books.
+  </p>
+  {% else %}
+  <form method="post" action="/tracker/replies/{{ balasan.id }}/approve">
+    <input type="hidden" name="approved" value="0">
+    <div class="baris-aksi">
+      <button type="submit" class="btn-mati">Withdraw approval</button>
+    </div>
+  </form>
+  {% endif %}
+  {% else %}
+  <p class="redup">
+    Approving records that this quote is accepted. Until then no SPK can be
+    issued to this vendor for this batch — replying is not agreeing.
+  </p>
+  <form method="post" action="/tracker/replies/{{ balasan.id }}/approve">
+    <input type="hidden" name="approved" value="1">
+    <div class="baris-aksi">
+      <button type="submit">Approve</button>
+    </div>
+  </form>
   {% endif %}
 </section>
 {% endif %}
@@ -129,7 +236,7 @@
 </section>
 
 <div class="baris-aksi-kanan">
-  <a href="/tracker/replies" role="button" class="secondary outline">All replies</a>
+  <a href="/tracker" role="button" class="secondary outline">All requests</a>
   {% if balasan.request_id %}
   <a href="/tracker/{{ balasan.request_id }}" role="button">Open the batch</a>
   {% endif %}

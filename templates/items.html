@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Items — Vendor RFQ Blast{% endblock %}
+{% block title %}Items — {{ merek }}{% endblock %}
 
 {% block content %}
 <hgroup>
@@ -87,4 +87,6 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% include "_pagination.html" %}
 {% endblock %}
