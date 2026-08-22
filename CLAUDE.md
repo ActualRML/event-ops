@@ -132,7 +132,7 @@ Language — the split is by audience, not by file:
                      batches), /tracker/batch/{request_id} and its retry
       spk.py         /tracker/batch/{request_id}/spk/{vendor_id} and download
       rundown.py     /events/{event_id}/rundown and its items
-    templates/  static/  email_templates/  db/  docs/  README.md
+    templates/  static/  email_templates/  db/  README.md
 
 config is also where the IMAP settings live. IMAP_USER and IMAP_PASS fall back
 to the SMTP pair — same Gmail account, same app password, no second credential

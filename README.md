@@ -30,7 +30,11 @@ Brief acara diisi sekali, vendor dicentang lintas kategori, lalu sistem
 merender satu email personal per vendor. Preview wajib: tombol kirim tidak
 pernah mengirim langsung, email contoh selalu ditampilkan dulu. Pengiriman
 jalan di background dengan jeda antar email, dan satu email gagal dicatat
-sebagai `failed` lalu batch lanjut — tidak pernah menghentikan sisanya.
+sebagai `failed` lalu batch lanjut — tidak pernah menghentikan sisanya. Pesan
+errornya diterjemahkan jadi kalimat biasa saat ditampilkan, bukan saat
+disimpan: string `"ExceptionName: detail"` mentahnya tetap ada di
+`outbox.error_msg`, jadi baris yang sudah telanjur gagal ikut memungut
+kalimat yang diperbaiki tanpa migrasi apa pun.
 Tracker tersusun tiga lapis, mengikuti cara acara itu dikerjakan. Halaman
 depannya mendaftar **acara** — satu baris per acara, dengan jumlah batch dan
 jumlah sponsornya. Membukanya menampilkan **batch-batch** acara itu, dinamai
@@ -54,11 +58,6 @@ untuk ditempatkan manual.
 
 Alur: **brief → pilih kategori + centang vendor → preview → kirim → tracker
 (acara → batch → vendor) → baca balasan**
-
-![Halaman tracker satu batch: 8 vendor, 6 terkirim, 2 gagal, dengan alasan gagal per baris](docs/tracker-detail.jpg)
-
-*Tracker satu batch. Yang gagal tidak menghentikan sisanya, dan alasannya
-ditampilkan sebagai kalimat biasa — error SMTP mentahnya tetap tersimpan.*
 
 ### 2. Penerbitan SPK
 
@@ -94,13 +93,10 @@ memberi peringatan beserta selisih menitnya — memberi tahu, bukan memblokir,
 karena acara yang molor tetap acara yang nyata. Halamannya bisa langsung
 dicetak: aturan `@media print` menyembunyikan seluruh chrome aplikasi dan
 menyisakan jadwalnya saja, seluruhnya dalam bahasa Indonesia karena lembar itu
-dipegang kru dan vendor di lokasi.
-
-![Rundown versi cetak: judul acara, lokasi, peringatan lewat batas venue, lalu tabel Jam / Kegiatan / Durasi / PIC](docs/rundown-cetak.jpg)
-
-*Halaman yang sama saat dicetak. Tanpa nav, tanpa tombol, hitam di atas putih,
-dan peringatan lewat batasnya jadi kalimat biasa supaya tetap terbaca kalau
-dicetak hitam-putih.*
+dipegang kru dan vendor di lokasi. Warna adalah hal pertama yang hilang di
+printer hitam-putih, jadi tidak ada satu pun yang bergantung padanya: semua
+teks abu-abu kembali jadi hitam, dan peringatan lewat batas venue dicetak
+sebagai kalimat biasa, bukan kartu bergaris merah.
 
 ### 4. Sponsor & paket
 
