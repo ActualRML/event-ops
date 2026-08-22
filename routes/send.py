@@ -356,7 +356,7 @@ async def send_dispatch(
                 status_code=409,
             )
         tasks.schedule_batch(existing)
-        return RedirectResponse(f"/tracker/{existing}", status_code=303)
+        return RedirectResponse(f"/tracker/batch/{existing}", status_code=303)
 
     errors = validasi_brief(brief, ids, event_id=acara_id,
                              kategori_id=kategori_id)
@@ -404,7 +404,7 @@ async def send_dispatch(
         )
 
     tasks.schedule_batch(baru)
-    return RedirectResponse(f"/tracker/{baru}", status_code=303)
+    return RedirectResponse(f"/tracker/batch/{baru}", status_code=303)
 
 
 @router.get("/send/{request_id}/progress")

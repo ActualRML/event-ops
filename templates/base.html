@@ -48,11 +48,13 @@
     .badge-gagal, .badge-failed { background: #b3261e; }
     .badge-replied { background: #1565c0; }
     tr.nonaktif td { opacity: .45; }
-    /* Tracker list: the sent count and its badges on one row, vertically centred
-       so the inline-block badge stops riding above the text baseline.
-       Left-aligned on purpose — centring variable-width content in a column
-       makes every row start at a different x, which reads as ragged. The column
-       is sized to the content instead, so there is no empty gap to float in. */
+    /* A batch's delivery cell: the sent count and its badges on one row,
+       vertically centred so the inline-block badge stops riding above the
+       text baseline. Left-aligned on purpose — centring variable-width
+       content in a column makes every row start at a different x, which reads
+       as ragged. The column is sized to the content instead, so there is no
+       empty gap to float in. Used on the event page, where delivery lives now
+       that the tracker list carries sponsors in that column instead. */
     .kirim-ringkas { display: flex; flex-wrap: wrap; align-items: center;
                      gap: 4px 8px; }
 
@@ -81,7 +83,7 @@
     /* One table look everywhere. Column widths come from each table's own
        colgroup; table-layout: fixed is what makes those widths bind. */
     .tabel { table-layout: fixed; width: 100%; font-size: .9rem; }
-    .tabel td, .tabel th { padding: .35rem .6rem; vertical-align: middle;
+    .tabel td, .tabel th { padding: 12px 12px; vertical-align: middle;
                            overflow-wrap: break-word; }
     /* Outer columns flush with the panel gutter: without this the first
        column's text sits .6rem right of the heading above it, and the last
@@ -92,6 +94,18 @@
                 letter-spacing: .04em; color: var(--pico-muted-color);
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .angka { text-align: right; font-variant-numeric: tabular-nums; }
+    /* Same tabular figures, aligned left. For tables that read outward
+       from a name rather than lining their digits up on the column edge —
+       the sponsor package and the event page's sponsor list. This is a
+       class rather than a per-table override so a third such table adds no
+       fourth rule. */
+    .angka-kiri { text-align: left; font-variant-numeric: tabular-nums; }
+    /* Row numbers — centred, header and value alike. Not .angka: money
+       right-aligns so its digits line up on the column edge, but a short
+       ordinal pushed to one side reads as if it belongs to the neighbour. */
+    .tabel th.nomor, .tabel td.nomor {
+      text-align: center; font-variant-numeric: tabular-nums;
+    }
     /* Single-token values (emails) have no break opportunity, so they either
        break mid-word or push the row taller. Clip instead; the full value is
        on the cell's title attribute. */
@@ -223,7 +237,7 @@
        padding-top and the action row's margin instead. */
     main section { margin-bottom: 0; }
     main section > h3 {
-      font-size: 13px; font-weight: 600; letter-spacing: .01em;
+      font-size: 18px; font-weight: 600; letter-spacing: .01em;
       border-top: 1px solid #eef0f3; padding-top: 16px; margin: 0 0 12px;
     }
     /* The rule separates one section from the next, so the first section on a
@@ -419,6 +433,20 @@
     /* Nomor above the row's buttons: long, and it truncates rather than
        forcing the column wider. */
     .spk-nomor { display: block; margin-bottom: 3px; font-size: .72rem; }
+    /* Qty is the exception: a stepper is a control, not a value, and it is
+       centred in its column. The header carries .nomor for the same
+       reason, so the two agree. */
+    .tabel-paket .kendali-qty { justify-content: center; }
+    /* SPK reads as a VALUE column, not an action column — its header is
+       left-aligned like every other, so a right-aligned em-dash under it
+       looked like it belonged to nothing.
+
+       text-align only. The buttons already start at the cell's left edge:
+       .aksi-grup children take flex: 1 1 0 and .btn-mini width: 100%, so they
+       fill the cell rather than sitting at one end of it. Releasing that
+       basis here would size Edit and Download to their own labels and break
+       the equal-width pair the column is supposed to keep. */
+    .tabel td.kolom-spk { text-align: left; }
     /* Alone in its cell, so it may use the whole width — the 6rem cap exists
        for the paired buttons elsewhere. */
     .aksi-grup .btn-spk { max-width: none; }
@@ -596,12 +624,12 @@
                      /* bottom margin is the panel-to-footer gap; the footer
                         itself has no top margin */
                      border-radius: 10px; margin-block: 10px 12px;
-                     padding-block: 14px 32px;
+                     padding-block: 15px 32px;
                      padding-inline: 24px;
                      max-width: min(1200px, calc(100% - 48px));
                      margin-inline: auto; }
     main h2 { font-size: 1.5rem; line-height: 1.25; letter-spacing: -.02em;
-              margin-top: 0; margin-bottom: 4px; }
+              margin-top: 0; margin-bottom: 15px; }
 
     /* Context line as chips: number carries the weight, label stays muted. */
     .chips { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
@@ -613,7 +641,7 @@
     /* Inside an hgroup, where Pico mutes --pico-color on every child after the
        first — so this reads the value directly. */
     .chip-angka { font-weight: 500; color: var(--teks-gelap); }
-    main hgroup { margin-top: 0; margin-bottom: 20px; }
+    main hgroup { margin-top: 0; margin-bottom: 24px; }
     main hgroup > p { margin: 0; font-size: .875rem;
                       color: var(--pico-muted-color); }
     /* Only the controls row: a direct child of main. Nested .grid (the date
@@ -799,16 +827,16 @@
      every handler. Starlette puts `request` in the context of every
      TemplateResponse, so it is available on every page. #}
   {% set path = request.url.path if request else "" %}
-  {# The nav's one declaration. Two groups: what you do, then what you
-     maintain — so the separator in the panel is the gap between them rather
-     than an entry in the list. The trigger label and the marked entry are both
-     derived from this, so the two can never disagree.
+  {# The nav's one declaration. Two groups, and the separator in the panel is
+     the gap between them rather than an entry in the list. The trigger label
+     and the marked entry are both derived from this, so the two can never
+     disagree.
      Rundown and SPK are deliberately absent: both are per-event or per-batch
      with no top-level list, and stay reachable from Tracker. #}
   {% set kelompok = [
-       [("/send", "Send RFQ"), ("/tracker", "Tracker")],
-       [("/vendors", "Vendors"), ("/items", "Items"), ("/sponsors", "Sponsors"),
-        ("/events", "Events")],
+       [("/events", "Events"), ("/send", "Send RFQ"), ("/sponsors", "Sponsors"),
+        ("/tracker", "Tracker")],
+       [("/vendors", "Vendors"), ("/items", "Items")],
      ] %}
   {% set ns = namespace(disini=none) %}
   {% for grup in kelompok %}{% for tujuan, nama in grup %}

@@ -79,7 +79,11 @@
 
   <div class="baris-aksi">
     <button type="submit">Save</button>
-    <a href="{{ '/sponsors/' ~ sponsor.id if sponsor else '/sponsors' }}"
+    {# Editing goes back to the sponsor. CREATING goes to /tracker, not to
+       /sponsors: /sponsors IS this form now, so pointing Cancel there gave a
+       button that reloaded the page it was on. /tracker is where an event's
+       sponsors are listed, which is the page this one is reached instead of. #}
+    <a href="{{ '/tracker/sponsors/' ~ sponsor.id if sponsor else '/tracker' }}"
        role="button" class="secondary outline">Cancel</a>
   </div>
 </form>

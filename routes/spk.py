@@ -63,7 +63,7 @@ def spk_context(request_id: int, vendor_id: int, permintaan, vendor, spk,
     }
 
 
-@router.get("/tracker/{request_id}/spk/{vendor_id}")
+@router.get("/tracker/batch/{request_id}/spk/{vendor_id}")
 async def spk_form(request: Request, request_id: int, vendor_id: int):
     permintaan, vendor, spk = muat_spk(request_id, vendor_id)
     v = {
@@ -77,7 +77,7 @@ async def spk_form(request: Request, request_id: int, vendor_id: int):
     )
 
 
-@router.post("/tracker/{request_id}/spk/{vendor_id}")
+@router.post("/tracker/batch/{request_id}/spk/{vendor_id}")
 async def spk_save(
     request: Request,
     request_id: int,
@@ -116,10 +116,10 @@ async def spk_save(
     else:
         db.update_spk(spk["id"], nilai, lingkup_kerja.strip(), termin.strip())
 
-    return RedirectResponse(f"/tracker/{request_id}", status_code=303)
+    return RedirectResponse(f"/tracker/batch/{request_id}", status_code=303)
 
 
-@router.get("/tracker/{request_id}/spk/{vendor_id}/download")
+@router.get("/tracker/batch/{request_id}/spk/{vendor_id}/download")
 async def spk_download(request_id: int, vendor_id: int):
     permintaan, vendor, spk = muat_spk(request_id, vendor_id)
     if spk is None:
@@ -128,7 +128,7 @@ async def spk_download(request_id: int, vendor_id: int):
     # A vendor edited after issue can have lost its area or PIC. The form says
     # which; generating here would raise instead.
     if dokumen.periksa_konteks(vendor, permintaan):
-        return RedirectResponse(f"/tracker/{request_id}/spk/{vendor_id}",
+        return RedirectResponse(f"/tracker/batch/{request_id}/spk/{vendor_id}",
                                 status_code=303)
 
     # Rebuilt from the stored row on every download — nothing is cached, so an

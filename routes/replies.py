@@ -12,8 +12,8 @@ time. What only it had — the replies the ladder could not place — is now a
 section on /tracker that renders only when there is something in it. The
 detail page stays; it is where a reply is assigned and approved.
 
-THIS ROUTER MUST BE INCLUDED BEFORE tracker.router. /tracker/{request_id}
-matches any single segment, so "replies" would be captured as a request_id and
+THIS ROUTER MUST BE INCLUDED BEFORE tracker.router. /tracker/{event_id}
+matches any single segment, so "replies" would be captured as an event_id and
 422 on int conversion — a path parameter does not fall through to the next
 route when validation fails.
 """
@@ -60,7 +60,7 @@ async def replies_gone():
     """The deleted list, kept as a redirect and nothing more.
 
     Not a page and not coming back. It exists because without a handler the
-    path falls through to /tracker/{request_id}, which captures "replies" as an
+    path falls through to /tracker/{event_id}, which captures "replies" as an
     id and 422s on int conversion — so a bookmark or a history entry from
     before the deletion produces a validation error rather than a page. Three
     lines to turn that into the page that replaced it."""
@@ -202,7 +202,7 @@ async def reply_assign(reply_id: int, request_id: str = Form("")):
                                 detail="Vendor is not part of that batch")
 
     db.assign_reply(reply_id, tujuan, vendor_id)
-    return RedirectResponse(f"/tracker/{tujuan}", status_code=303)
+    return RedirectResponse(f"/tracker/batch/{tujuan}", status_code=303)
 
 
 @router.get("/tracker/replies/{reply_id}/attachment/{attachment_id}")

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ acara.judul_acara }} — Tracker{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h2>{{ acara.judul_acara }}</h2>
+  <p class="chips">
+    <span class="chip">event <span class="chip-angka">{{ acara.tanggal_acara | date or "no date" }}</span></span>
+    {% if acara.lokasi %}
+    <span class="chip"><span class="chip-angka">{{ acara.lokasi }}</span></span>
+    {% endif %}
+  </p>
+</hgroup>
+
+{# Batches first: this page is reached from the tracker, and the rounds are
+   what it was opened for. Sponsors ride below as the other half of the same
+   job rather than as the point of the page. #}
+<section>
+  <h3>Batches</h3>
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 6%">
+      <col style="width: 32%">
+      <col style="width: 20%">
+      <col style="width: 28%">
+      <col style="width: 14%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="nomor">No.</th>
+        <th>Category</th>
+        <th>Created</th>
+        <th>Delivery</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        {# batch_ke, not b.id: inside one event the rounds read 1..n, which is
+           how procurement counts them. The id is still what the link carries. #}
+        <td class="nomor">{{ b.batch_ke }}</td>
+        <td><strong>{{ b.kategori }}</strong></td>
+        <td class="redup">{{ b.created_at | datetime }}</td>
+        <td>
+          <div class="kirim-ringkas">
+            <span>{{ b.sent }}/{{ b.total }} sent</span>
+            {% if b.failed %}<span class="badge badge-gagal">{{ b.failed }} failed</span>{% endif %}
+            {% if b.draft %}<span class="badge badge-draft">{{ b.draft }} pending</span>{% endif %}
+          </div>
+        </td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            <a href="/tracker/batch/{{ b.id }}" role="button"
+               class="secondary outline btn-mini">Details</a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5" class="kosong">
+          No batches for this event. Send the first one from the Send page.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h3>Sponsors</h3>
+  <table class="tabel">
+    <colgroup>
+      <col style="width: 6%">
+      <col style="width: 30%">
+      <col style="width: 19%">
+      <col style="width: 12%">
+      <col style="width: 19%">
+      <col style="width: 14%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="nomor">No.</th>
+        <th>Sponsor</th>
+        <th class="angka-kiri">Contribution</th>
+        {# "Items", not "Lines": the column counts catalog items on the
+           package, and that is the word the rest of the app uses for them. #}
+        <th class="nomor">Items</th>
+        <th class="angka-kiri">Package value</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sponsors %}
+      <tr>
+        {# loop.index, not an id: sponsors have no round or position of their
+           own, so this numbers the rows as displayed — list_sponsors orders
+           them alphabetically inside the event. A display position, which is
+           what a No. column on a list means. #}
+        <td class="nomor">{{ loop.index }}</td>
+        <td><strong>{{ s.nama_pt }}</strong></td>
+        <td class="angka-kiri">{{ s.kontribusi | rupiah }}</td>
+        <td class="nomor">{{ s.baris }}</td>
+        {# The snapshot sum, straight from list_sponsors — what the package was
+           agreed at, never re-read from the catalog. #}
+        <td class="angka-kiri">{{ s.value_total | rupiah }}</td>
+        <td class="aksi">
+          <div class="aksi-grup">
+            <a href="/tracker/sponsors/{{ s.id }}" role="button"
+               class="secondary outline btn-mini">Details</a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" class="kosong">
+          No sponsors for this event yet. Add one from the Sponsors page.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="baris-aksi-kanan">
+  <a href="/tracker" role="button" class="secondary outline">Tracker</a>
+  {# The label carries the state, because the destination is the only place
+     that shows it: one link for an event that has a running order and one for
+     an event that does not. Same wording as the batch page. #}
+  <a href="/events/{{ event_id }}/rundown" role="button" class="secondary outline">
+    {% if rundown %}Rundown{% else %}Start rundown{% endif %}</a>
+</div>
+{% endblock %}

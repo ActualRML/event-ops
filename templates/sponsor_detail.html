@@ -51,7 +51,7 @@
 <section>
   <h3>Add a line</h3>
   {% if pilihan %}
-  <form method="post" action="/sponsors/{{ sponsor.id }}/items"
+  <form method="post" action="/tracker/sponsors/{{ sponsor.id }}/items"
         class="form-rapat form-vendor">
     {# Item only. The line lands at qty 1 and is adjusted in the table above,
        which is also the answer for an item already in the package — the row
@@ -99,8 +99,11 @@
 </section>
 
 <div class="baris-aksi-kanan">
-  <a href="/sponsors" role="button" class="secondary outline">All sponsors</a>
-  <a href="/sponsors/{{ sponsor.id }}/edit" role="button" class="secondary outline">Edit sponsor</a>
-  <a href="/sponsors/{{ sponsor.id }}/cetak" role="button">Print sheet</a>
+  {# Back to the EVENT, not to /sponsors: there is no sponsor list any more,
+     and /sponsors is the create form. The event's page is where this
+     sponsor's siblings are. #}
+  <a href="/tracker/{{ sponsor.event_id }}" role="button" class="secondary outline">Back to event</a>
+  <a href="/tracker/sponsors/{{ sponsor.id }}/edit" role="button" class="secondary outline">Edit sponsor</a>
+  <a href="/tracker/sponsors/{{ sponsor.id }}/print" role="button">Print sheet</a>
 </div>
 {% endblock %}

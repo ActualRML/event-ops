@@ -70,9 +70,9 @@ app.include_router(sponsors.router)
 # do not overlap, so include order between the two does not matter.
 app.include_router(events.router)
 app.include_router(send.router)
-# BEFORE tracker, and this is load-bearing: tracker owns /tracker/{request_id},
-# which matches any single segment, so "replies" would be captured as a
-# request_id and 422 on int conversion. A path parameter that fails validation
+# BEFORE tracker, and this is load-bearing: tracker owns /tracker/{event_id},
+# which matches any single segment, so "replies" would be captured as an
+# event_id and 422 on int conversion. A path parameter that fails validation
 # does not fall through to the next route.
 app.include_router(replies.router)
 app.include_router(tracker.router)

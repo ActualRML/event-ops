@@ -1,9 +1,12 @@
 # Event Ops
 
 Internal tool untuk event organizer. Satu acara ditangani dari mencari vendor
-sampai hari-H: sebar RFQ ke banyak vendor sekaligus, terbitkan SPK untuk yang
-menang, lalu susun rundown acaranya. Ketiganya menggantung pada satu baris
-`requests` — satu acara, satu benang, tanpa menyalin data antar modul.
+sampai hari-H: sebar RFQ ke banyak vendor sekaligus, baca balasannya, terbitkan
+SPK untuk yang menang, jual paket ke sponsor, lalu susun rundown acaranya.
+Semuanya menggantung pada satu baris `events` — batch RFQ, sponsor, dan rundown
+sama-sama membawa `event_id` dan tidak satu pun menyalin judul, tanggal, atau
+lokasinya. Satu acara, satu benang. Membetulkan judul acara yang salah ketik
+membetulkannya di setiap tempat sekaligus.
 
 ## Masalah
 
@@ -14,7 +17,7 @@ dihubungi, SPK untuk vendor yang menang diketik ulang di Word, dan rundown
 hari-H hidup di spreadsheet terpisah yang jam-jamnya harus dihitung ulang
 manual setiap ada satu durasi berubah.
 
-## Tiga modul
+## Empat modul
 
 ### 1. Vendor & RFQ blast
 
@@ -28,10 +31,29 @@ merender satu email personal per vendor. Preview wajib: tombol kirim tidak
 pernah mengirim langsung, email contoh selalu ditampilkan dulu. Pengiriman
 jalan di background dengan jeda antar email, dan satu email gagal dicatat
 sebagai `failed` lalu batch lanjut — tidak pernah menghentikan sisanya.
-Halaman tracker menampilkan status per vendor beserta pesan error yang sudah
-diterjemahkan jadi kalimat biasa.
+Tracker tersusun tiga lapis, mengikuti cara acara itu dikerjakan. Halaman
+depannya mendaftar **acara** — satu baris per acara, dengan jumlah batch dan
+jumlah sponsornya. Membukanya menampilkan **batch-batch** acara itu, dinamai
+kategorinya (Tenda, Sound System), bukan nomor. Membuka satu batch menampilkan
+**status per vendor** beserta pesan error yang sudah diterjemahkan jadi
+kalimat biasa, tombol retry, dan penerbitan SPK.
 
-Alur: **brief → pilih kategori + centang vendor → preview → kirim → tracker**
+Pembagiannya begitu karena angka gabungan lintas batch tidak bisa
+ditindaklanjuti: "6 dari 11 terkirim" untuk tiga ronde tidak menunjuk ronde
+mana pun, dan tombol retry-nya ada di dalam. Daftar menyebut acara punya apa;
+halaman di dalamnya menyebut bagaimana jalannya.
+
+Balasan vendor dibaca di dalam app. Setiap batch membawa kode referensi
+(`requests.kode`) yang dicetak ke subject sebagai `[RFQ-3F2A]`, dan subject itu
+ikut terbawa saat vendor menekan Reply — jadi penanda itu pulang sendiri tanpa
+vendor melakukan apa pun. Sebuah tombol menarik kotak masuk lewat IMAP dan
+mencocokkan tiap pesan lewat empat tingkat, dari `In-Reply-To` yang menunjuk
+persis satu baris outbox sampai kode subject saja. Yang tidak bisa dicocokkan
+tidak dibuang diam-diam: ia muncul di daftar tersendiri di halaman tracker
+untuk ditempatkan manual.
+
+Alur: **brief → pilih kategori + centang vendor → preview → kirim → tracker
+(acara → batch → vendor) → baca balasan**
 
 ![Halaman tracker satu batch: 8 vendor, 6 terkirim, 2 gagal, dengan alasan gagal per baris](docs/tracker-detail.jpg)
 
@@ -40,10 +62,17 @@ ditampilkan sebagai kalimat biasa — error SMTP mentahnya tetap tersimpan.*
 
 ### 2. Penerbitan SPK
 
-Setelah vendor menang, SPK (Surat Perintah Kerja) diterbitkan langsung dari
-baris vendor itu di tracker. Yang diisi hanya harga, lingkup kerja, dan termin
-pembayaran; nama PT, PIC, judul acara, tanggal, dan lokasi diambil dari data
-yang sudah ada.
+SPK (Surat Perintah Kerja) diterbitkan dari baris vendor itu di halaman batch,
+tapi hanya untuk vendor yang penawarannya **disetujui seseorang**. Membalas
+bukan berarti disepakati: vendor yang menjawab lalu ditolak tidak pernah
+membuka gerbang itu. Persetujuan adalah tindakan tersendiri dengan tombolnya
+sendiri, di halaman detail balasan — harganya ada di depan mata saat menerima,
+dan membuka halaman itu sudah menandai balasannya terbaca, jadi "tidak bisa
+disetujui tanpa dibaca" dijamin oleh letak tombolnya, bukan oleh pemeriksaan
+yang bisa lupa ditulis.
+
+Yang diisi hanya harga, lingkup kerja, dan termin pembayaran; nama PT, PIC,
+judul acara, tanggal, dan lokasi diambil dari data yang sudah ada.
 
 Nomor surat dialokasikan sekali saat baris disimpan, di dalam transaksi, dan
 tidak pernah dihitung ulang — dokumen yang dicetak ulang bulan depan tetap
@@ -72,6 +101,35 @@ dipegang kru dan vendor di lokasi.
 *Halaman yang sama saat dicetak. Tanpa nav, tanpa tombol, hitam di atas putih,
 dan peringatan lewat batasnya jadi kalimat biasa supaya tetap terbaca kalau
 dicetak hitam-putih.*
+
+### 4. Sponsor & paket
+
+Sisi pemasukan acara. Tiap sponsor punya kontribusi dan satu persentase yang
+menentukan berapa besar paket yang boleh dibelanjakan dari kontribusi itu —
+default 12%. Paketnya disusun dari katalog `items`: tiap baris punya cost yang
+kami bayar dan value yang ditagihkan ke sponsor, jadi halaman bisa melaporkan
+sisa budget dan kelipatan nilainya sekaligus.
+
+Uang di baris yang sudah terjual tidak pernah bergerak. Cost dan value
+disalin dari katalog saat baris dibuat dan tidak pernah dibaca ulang — begitu
+juga surcharge zona acara, yang dibekukan bersamanya. Menaikkan harga katalog
+bulan depan meninggalkan setiap paket yang sudah tersusun persis seperti
+semula, dan baris yang dihargai dengan tarif zona lama tetap **dilaporkan**
+sebagai riwayat, tidak pernah diam-diam disesuaikan. Ini kebalikan dari aturan
+rundown: rundown menggambarkan yang akan terjadi jadi selalu dihitung ulang,
+paket mencatat yang sudah dijanjikan jadi harus diam di tempat.
+
+Paket yang melewati budget tidak diblokir — halamannya melaporkan berapa
+lebihnya dan menawarkan dua jalan keluar, karena staf boleh saja sengaja
+melebihi. Ada satu halaman cetak terpisah untuk sponsor, dan halaman itu
+**tidak pernah dikirimi angka cost sama sekali** oleh route-nya. Itu
+jaminannya: angka internal tidak mungkin ikut tercetak karena tidak pernah
+sampai ke template.
+
+Sponsor tidak punya halaman daftar sendiri. Menu Sponsors adalah form tambah
+sponsor; sponsor yang sudah ada dibaca lewat acaranya di tracker, karena satu
+baris sponsor memang milik satu acara — kolomnya `NOT NULL` dan tabelnya
+`UNIQUE(event_id, nama_pt)`.
 
 ## Stack
 
@@ -130,10 +188,9 @@ bukan karena terlewat:
 | **Login / autentikasi** | Tool internal, satu tim kecil di jaringan kantor. Route kirim pun tidak diautentikasi — tidak ada lapisan auth sama sekali. Menambahnya berarti user, session, dan reset password, semuanya di luar masalah yang mau diselesaikan. |
 | **Test otomatis** | Tidak ada. Yang diuji manual: alur penuh brief sampai tracker termasuk jalur gagal dan retry, penerbitan dan cetak ulang SPK, serta aritmetika rundown termasuk lewat tengah malam dan batas venue. |
 | **Migrasi skema** | Tidak ada, dan memang tidak diperlukan. Perubahan skema dilakukan dengan menyunting `db/schema.sql` lalu membangun ulang database lewat `python init_db.py --force`. Datanya data demo — dibuat ulang, bukan dipertahankan — jadi jalur ALTER TABLE tidak membeli apa pun. Sempat ada `db/migrations/` berisi SQL bernomor untuk empat perubahan; keempatnya toh sudah dilipat ke `schema.sql`, yang memang dipakai setiap build, sehingga file-file itu hanya deskripsi kedua dari skema yang sama dan tidak pernah dijalankan siapa pun. Sudah diverifikasi setara lalu dihapus. Tanpa `--force`, `init_db.py` menolak, menyebut baris apa saja yang akan hilang, dan mencetak perintah backup-nya. |
-| **Membaca balasan vendor di dalam app** | Setengah jadi, dan disengaja. Sisi keluar sudah ada: setiap batch punya kode referensi (`requests.kode`) yang dicetak ke subject sebagai `[RFQ-3F2A]`, dan subject itu ikut terbawa saat vendor menekan Reply. Sisi masuk — IMAP, pencocokan, tampilan — belum dibangun. Tidak ada yang bisa dicocokkan surut: hanya email yang dikirim setelah kode ini ada yang membawa penanda. Satu pertanyaan masih menggantung, lihat `cek_message_id.py` dan bagian "Reply matching" di CLAUDE.md. |
 | **Parsing harga dari lampiran** | Di luar cakupan dan tetap begitu. Menyimpan dan menampilkan balasan adalah satu hal; membaca angka dari PDF atau foto penawaran adalah hal lain, dan yang kedua tidak akan dibangun. |
-| **Tabel quotations + perbandingan harga** | Baru masuk akal setelah balasan bisa dibaca otomatis. Tanpa itu harga tetap diketik manual — sama saja dengan spreadsheet yang sudah dipakai. |
-| **Lampiran file** | Bikin RFQ berisiko masuk spam dan menambah urusan penyimpanan. Detail kebutuhan cukup ditulis di body email. |
+| **Tabel quotations + perbandingan harga** | Balasan memang sudah terbaca, tapi harganya tidak — dan tanpa angka yang terekstrak otomatis, tabel banding cuma jadi tempat mengetik ulang harga, sama saja dengan spreadsheet yang sudah dipakai. Harga masuk sekali saja, saat SPK diterbitkan. |
+| **Lampiran pada RFQ yang dikirim** | Bikin email berisiko masuk spam dan menambah urusan penyimpanan. Detail kebutuhan cukup ditulis di body. Lampiran yang **masuk** justru sebaliknya — lampiran di balasan vendor disimpan ke folder `attachments/` dan bisa diunduh dari halaman balasan, dengan nama file di disk yang kami tentukan sendiri, terpisah dari nama asli kiriman vendor. |
 | **Template email per kategori** | Satu template dengan placeholder sudah menutup semua kategori. |
 | **Integrasi kalender, Docker, CI** | Tidak menyentuh bottleneck-nya, yaitu loop kirim manual. Dijalankan lokal untuk demo. |
 
@@ -144,4 +201,16 @@ Batasan lain yang perlu diketahui saat demo:
   `draft` dan bisa dilanjutkan lewat tombol retry di halaman tracker.
 - Gmail punya batas kirim harian. Untuk batch besar, naikkan
   `SEND_DELAY_SECONDS`.
-- Tracker menampilkan status pengiriman, bukan status balasan.
+- **`db/rfq.db` bukan lagi seluruh sistemnya.** Byte lampiran ada di folder
+  `attachments/`, jadi menyalin databasenya saja menghasilkan salinan yang
+  setiap baris lampirannya utuh — nama file, ukuran, tipe — tanpa satu byte
+  isinya, dan setiap unduhan jadi 404. Salin `attachments/` bersamaan dengan
+  databasenya. Tidak ada yang mengotomatiskan ini.
+- Pengecekan balasan dijalankan lewat tombol, bukan penjadwal. Tidak ada
+  poller — `IMAP SEARCH SINCE` cuma punya ketelitian tanggal, jadi setiap
+  pemeriksaan mengulang sehari penuh dari pemeriksaan terakhir yang berhasil,
+  dan `inbox.message_id UNIQUE` yang membuat tumpang tindih itu tidak
+  berdampak. Pemeriksaan yang gagal tidak pernah memajukan watermark-nya.
+- Balasan otomatis (out-of-office) tetap disimpan dan ditampilkan, tapi tidak
+  ikut dihitung sebagai jawaban. Dideteksi dari header, tidak pernah dari
+  subject — vendor di sini menjawab dalam bahasa Indonesia.

@@ -38,7 +38,7 @@
   <div><dt>Location</dt><dd>{{ permintaan.lokasi or "—" }}</dd></div>
 </dl>
 
-<form method="post" action="/tracker/{{ request_id }}/spk/{{ vendor_id }}"
+<form method="post" action="/tracker/batch/{{ request_id }}/spk/{{ vendor_id }}"
       class="form-rapat form-vendor">
   <label>
     Amount (rupiah)
@@ -72,7 +72,7 @@
     <button type="submit" {% if hambatan %}disabled{% endif %}>
       {{ "Update" if spk else "Issue SPK" }}
     </button>
-    <a href="/tracker/{{ request_id }}" role="button" class="secondary outline">Cancel</a>
+    <a href="/tracker/batch/{{ request_id }}" role="button" class="secondary outline">Cancel</a>
   </div>
 </form>
 {% endblock %}

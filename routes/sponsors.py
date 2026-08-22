@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 import config
 import db
 from core import dokumen
-from deps import parse_halaman, parse_harga, templates
+from deps import parse_harga, templates
 
 router = APIRouter()
 
@@ -138,7 +138,7 @@ def form_context(request: Request, sponsor, v: dict, errors: dict) -> dict:
         "request": request,
         "sponsor": sponsor,
         "judul": f"Edit {sponsor['nama_pt']}" if sponsor else "New sponsor",
-        "action": f"/sponsors/{sponsor['id']}" if sponsor else "/sponsors",
+        "action": f"/tracker/sponsors/{sponsor['id']}" if sponsor else "/sponsors",
         "v": v,
         "errors": errors,
         "events": db.list_events(),
@@ -191,50 +191,42 @@ def jawab_qty(request: Request, sponsor_id: int):
             request, "_sponsor_package.html",
             muat_detail(request, sponsor_id, {}, oob=True),
         )
-    return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
+    return RedirectResponse(f"/tracker/sponsors/{sponsor_id}", status_code=303)
 
 
 @router.get("/sponsors")
-async def sponsor_list(request: Request, per: str = "", page: str = ""):
-    hal = parse_halaman(per, page, db.count_sponsors())
-    sponsors = db.list_sponsors(limit=hal["per"], offset=hal["offset"])
-    # Grouped in Python rather than in the template: the rows arrive already
-    # ordered by event, so this only has to break them where the event changes.
-    kelompok: list[dict] = []
-    for s in sponsors:
-        if not kelompok or kelompok[-1]["event_id"] != s["event_id"]:
-            kelompok.append({
-                "event_id": s["event_id"],
-                "judul_acara": s["judul_acara"],
-                "tanggal_acara": s["tanggal_acara"],
-                "baris": [],
-            })
-        kelompok[-1]["baris"].append(
-            {"s": s, "r": ringkasan(s, {"cost_pakai": s["cost_pakai"],
-                                        "value_total": s["value_total"]})}
-        )
+async def sponsor_form_baru(request: Request):
+    """The Sponsors entry is a CREATE FORM, not a list.
 
-    # Both chips count the TABLE, not the page. A group can also straddle a
-    # page boundary — its header simply repeats at the top of the next one,
-    # which is the honest rendering of a window onto an ordered list.
+    There was a list here and it is deleted. A sponsor is not a master record
+    the way a vendor is — sponsors.event_id is NOT NULL and the table is
+    UNIQUE(event_id, nama_pt), so a row belongs to exactly one event by
+    construction and never spans two. The page had to group by event to render
+    at all, which is the shape saying it was an event's list wearing a
+    top-level entry. That list lives where the event does now, on
+    /tracker/{event_id}, and this entry keeps the one thing only it offered:
+    adding a sponsor.
+
+    So this is a GET that renders the form the POST below submits to. The nav
+    href stays /sponsors, which is also what lights the drawer entry for every
+    path under it — /sponsors/new and /sponsors/{id} included.
+
+    Reaching an EXISTING sponsor is the event's job now: Tracker → the event →
+    its sponsors. Nothing here lists them, deliberately."""
     return templates.TemplateResponse(
-        request, "sponsors.html",
-        {
-            "kelompok": kelompok,
-            "hal": hal,
-            "jumlah": hal["total"],
-            "jumlah_event": db.count_sponsor_events(),
-        },
+        request, "sponsor_form.html", form_context(request, None, kosong(), {})
     )
 
 
 # Declared before /sponsors/{sponsor_id}: FastAPI matches in registration
 # order, and "new" is not an int, so the parameterised route would 422 it.
+# That ordering is also why this handler still exists at all — without it the
+# old path does not 404, it reaches sponsor_update and fails int conversion,
+# which is a worse answer to a stale bookmark than a redirect. Same shape as
+# the /tracker/replies redirect, and kept for the same reason.
 @router.get("/sponsors/new")
-async def sponsor_form_baru(request: Request):
-    return templates.TemplateResponse(
-        request, "sponsor_form.html", form_context(request, None, kosong(), {})
-    )
+async def sponsor_form_pindah():
+    return RedirectResponse("/sponsors", status_code=307)
 
 
 @router.post("/sponsors")
@@ -264,17 +256,17 @@ async def sponsor_create(
         acara, nama_pt.strip(), parsed["kontribusi"],
         parsed["persen_budget"], catatan.strip(),
     )
-    return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
+    return RedirectResponse(f"/tracker/sponsors/{sponsor_id}", status_code=303)
 
 
-@router.get("/sponsors/{sponsor_id}")
+@router.get("/tracker/sponsors/{sponsor_id}")
 async def sponsor_detail(request: Request, sponsor_id: int):
     return templates.TemplateResponse(
         request, "sponsor_detail.html", muat_detail(request, sponsor_id, {})
     )
 
 
-@router.get("/sponsors/{sponsor_id}/edit")
+@router.get("/tracker/sponsors/{sponsor_id}/edit")
 async def sponsor_form_edit(request: Request, sponsor_id: int):
     sponsor = db.get_sponsor(sponsor_id)
     if sponsor is None:
@@ -293,7 +285,7 @@ async def sponsor_form_edit(request: Request, sponsor_id: int):
     )
 
 
-@router.post("/sponsors/{sponsor_id}")
+@router.post("/tracker/sponsors/{sponsor_id}")
 async def sponsor_update(
     request: Request,
     sponsor_id: int,
@@ -324,10 +316,10 @@ async def sponsor_update(
         sponsor_id, nama_pt.strip(), parsed["kontribusi"],
         parsed["persen_budget"], catatan.strip(),
     )
-    return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
+    return RedirectResponse(f"/tracker/sponsors/{sponsor_id}", status_code=303)
 
 
-@router.post("/sponsors/{sponsor_id}/items")
+@router.post("/tracker/sponsors/{sponsor_id}/items")
 async def sponsor_item_add(
     request: Request,
     sponsor_id: int,
@@ -363,10 +355,10 @@ async def sponsor_item_add(
     # that gets two requests past the check above increments once rather than
     # raising, and a second row still cannot exist.
     db.add_sponsor_item(sponsor_id, pilihan)
-    return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
+    return RedirectResponse(f"/tracker/sponsors/{sponsor_id}", status_code=303)
 
 
-@router.post("/sponsors/{sponsor_id}/items/{line_id}/qty")
+@router.post("/tracker/sponsors/{sponsor_id}/items/{line_id}/qty")
 async def sponsor_item_qty_bump(
     request: Request,
     sponsor_id: int,
@@ -390,7 +382,7 @@ async def sponsor_item_qty_bump(
     return jawab_qty(request, sponsor_id)
 
 
-@router.post("/sponsors/{sponsor_id}/items/{line_id}/qty-exact")
+@router.post("/tracker/sponsors/{sponsor_id}/items/{line_id}/qty-exact")
 async def sponsor_item_qty_set(
     request: Request,
     sponsor_id: int,
@@ -406,17 +398,17 @@ async def sponsor_item_qty_set(
     return jawab_qty(request, sponsor_id)
 
 
-@router.post("/sponsors/{sponsor_id}/items/{line_id}/hapus")
+@router.post("/tracker/sponsors/{sponsor_id}/items/{line_id}/hapus")
 async def sponsor_item_remove(sponsor_id: int, line_id: int):
     """Delete one line. Ownership is checked first, the same way the two
     quantity routes check it: a line id belonging to another sponsor is a 404,
     not a deletion carried out on somebody else's package through this URL."""
     muat_baris(sponsor_id, line_id)
     db.remove_sponsor_item(line_id)
-    return RedirectResponse(f"/sponsors/{sponsor_id}", status_code=303)
+    return RedirectResponse(f"/tracker/sponsors/{sponsor_id}", status_code=303)
 
 
-@router.get("/sponsors/{sponsor_id}/cetak")
+@router.get("/tracker/sponsors/{sponsor_id}/print")
 async def sponsor_print(request: Request, sponsor_id: int):
     """The sheet the sponsor reads. Indonesian, and deliberately built from a
     context that has no cost in it at all: what the package costs us, what the

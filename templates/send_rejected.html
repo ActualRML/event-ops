@@ -17,7 +17,7 @@
 <div class="baris-aksi-kanan">
   <a href="/send" role="button" class="secondary outline">Back to Send</a>
   {% if request_id %}
-  <a href="/tracker/{{ request_id }}" role="button">View this request in the tracker</a>
+  <a href="/tracker/batch/{{ request_id }}" role="button">View this request in the tracker</a>
   {% endif %}
 </div>
 {% endblock %}

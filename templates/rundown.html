@@ -108,12 +108,13 @@
        the printout is carried by crew and vendors on site, so it follows the
        vendor-facing language rule, like the SPK. Both labels sit inside the
        same <th> — a second table for print would be the copy that drifts.
-       # and PIC read the same either way and carry no spans. Catatan has no
+       No. and PIC read the same either way and carry no spans — "No." is
+       the abbreviation in both languages. Catatan has no
        header: it prints as the second line inside Kegiatan, where it already
        lives on screen. #}
     <thead>
       <tr>
-        <th>#</th>
+        <th class="nomor">No.</th>
         <th><span class="layar">Time</span><span class="cetak">Jam</span></th>
         <th><span class="layar">Activity</span><span class="cetak">Kegiatan</span></th>
         <th><span class="layar">Duration</span><span class="cetak">Durasi</span></th>
@@ -125,7 +126,7 @@
     <tbody>
       {% for b in baris %}
       <tr>
-        <td class="angka">{{ b.item.urutan }}</td>
+        <td class="nomor">{{ b.item.urutan }}</td>
         <td class="sel-teks">{{ b.mulai }}–{{ b.selesai }}</td>
         <td>
           <strong>{{ b.item.kegiatan }}</strong>
@@ -253,7 +254,7 @@
 <div class="baris-aksi-kanan">
   {# The rundown belongs to the event, which may have been quoted in several
      batches, so there is no single batch to go "back" to. #}
-  <a href="/tracker" role="button" class="secondary outline">All requests</a>
+  <a href="/tracker" role="button" class="secondary outline">Tracker</a>
   {# Same page, printed — no print route, so there is no second copy to drift.
      Inline handler, as with lockSend and the Remove confirmation. #}
   <button type="button" class="secondary outline"

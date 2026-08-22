@@ -606,14 +606,70 @@ def progress(request_id: int) -> dict:
     }
 
 
-def list_requests(limit: int | None = None, offset: int = 0) -> list[sqlite3.Row]:
+def list_tracker_events(limit: int | None = None,
+                        offset: int = 0) -> list[sqlite3.Row]:
+    """Events that have gone out at least once, newest first, tallied whole.
+
+    This is the tracker LIST, and it is deliberately COUNTS ONLY. An event is
+    the row; how many batches and how many sponsors it has are the two
+    numbers. What those batches and sponsors actually ARE is the event page's
+    job, one click in — naming them here put three lines of small grey text in
+    every row and turned a scannable list into a wall.
+
+    A plain JOIN on requests, not a LEFT JOIN: the tracker is send history, so
+    an event nothing was ever sent for has nothing to show here. Creating one
+    on /events must not put a row on this page.
+
+    The sponsor count is a SCALAR SUBQUERY rather than a third join, and that
+    is not a style choice — joining sponsors would multiply every request row
+    by every sponsor row, so `batches` would count batches × sponsors and be
+    silently wrong. A subquery is evaluated per event and cannot multiply
+    anything, which leaves COUNT(r.id) exact with no DISTINCT and no other
+    join to defend against.
+
+    Ordered by MAX(r.id), the event's most recent batch, so "newest first"
+    means most recently quoted rather than most recently created. That is the
+    only thing r.created_at was ever read for here."""
+    sql = """SELECT e.id, e.judul_acara, e.tanggal_acara,
+                      COUNT(r.id) AS batches,
+                      (SELECT COUNT(*) FROM sponsors sp
+                        WHERE sp.event_id = e.id) AS sponsors
+                 FROM events e
+                 JOIN requests r ON r.event_id = e.id
+                GROUP BY e.id
+                ORDER BY MAX(r.id) DESC"""
+    params: list[object] = []
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = [limit, offset]
+    with closing(get_conn()) as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def count_tracker_events() -> int:
+    """How many events the tracker list has rows for — the total behind its
+    pager. Counts events that have a batch, which is the same predicate the
+    JOIN in list_tracker_events applies."""
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT COUNT(DISTINCT event_id) FROM requests"
+        ).fetchone()[0]
+
+
+def list_requests(event_id: int | None = None, limit: int | None = None,
+                  offset: int = 0) -> list[sqlite3.Row]:
     """Batches newest first, with their outbox tallies. judul_acara and
     tanggal_acara come from the event, so callers read the same keys they
     always did.
 
+    event_id None means every batch; passing an id narrows to one event, which
+    is what the tracker's event detail page renders.
+
     The two window functions are computed BEFORE LIMIT, so "batch 2 of 3" keeps
     counting across every batch of that event and does not start describing the
-    page. That is the behaviour wanted; do not move them."""
+    page. That is the behaviour wanted; do not move them. Narrowing by event_id
+    is different — the WHERE runs before the window, so inside one event the
+    counter still reads 1..n over exactly the rows shown."""
     sql = """SELECT r.id, r.event_id, e.judul_acara, e.tanggal_acara,
                       c.nama AS kategori, r.created_at,
                       -- Window functions run after GROUP BY, so these count
@@ -628,21 +684,19 @@ def list_requests(limit: int | None = None, offset: int = 0) -> list[sqlite3.Row
                  FROM requests r
                  JOIN events e ON e.id = r.event_id
                  JOIN categories c ON c.id = r.category_id
-                 LEFT JOIN outbox o ON o.request_id = r.id
+                 LEFT JOIN outbox o ON o.request_id = r.id"""
+    params: list[object] = []
+    if event_id is not None:
+        sql += " WHERE r.event_id = ?"
+        params.append(event_id)
+    sql += """
                 GROUP BY r.id
                 ORDER BY r.id DESC"""
-    params: list[object] = []
     if limit is not None:
         sql += " LIMIT ? OFFSET ?"
-        params = [limit, offset]
+        params.extend([limit, offset])
     with closing(get_conn()) as conn:
         return conn.execute(sql, params).fetchall()
-
-
-def count_requests() -> int:
-    """How many batches exist — the total behind the pager."""
-    with closing(get_conn()) as conn:
-        return conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
 
 
 def request_detail(request_id: int) -> sqlite3.Row | None:
@@ -963,8 +1017,10 @@ def list_sponsors(event_id: int | None = None, limit: int | None = None,
     """Sponsors with their event and their package tallied up.
 
     event_id None means every sponsor, newest event first and alphabetical
-    inside it — which is the grouping the list page renders. Passing an id
-    narrows to one event.
+    inside it. Passing an id narrows to one event, which is the only way this
+    is called now — the sponsor list page is deleted and an event's sponsors
+    are rendered on /tracker/{event_id}. The unfiltered branch is kept because
+    the ordering is what makes it meaningful, not because anything calls it.
 
     The two sums come from the snapshot columns, never from items, so a row
     here reports what the package was agreed at. COALESCE because a sponsor
@@ -991,31 +1047,6 @@ def list_sponsors(event_id: int | None = None, limit: int | None = None,
 
     with closing(get_conn()) as conn:
         return conn.execute(sql, params).fetchall()
-
-
-def count_sponsor_events() -> int:
-    """How many distinct events have a sponsor — the second chip on /sponsors.
-
-    Counted in SQL rather than from the grouped rows, because with a page of
-    sponsors the groups on screen are the events ON THIS PAGE, not the events
-    that have sponsors at all."""
-    with closing(get_conn()) as conn:
-        return conn.execute(
-            "SELECT COUNT(DISTINCT event_id) FROM sponsors"
-        ).fetchone()[0]
-
-
-def count_sponsors(event_id: int | None = None) -> int:
-    """How many sponsors the same filter matches. No GROUP BY here: the list
-    groups to tally each sponsor's package, but the number of ROWS is the
-    number of sponsors either way."""
-    sql = "SELECT COUNT(*) FROM sponsors s"
-    params: list[object] = []
-    if event_id is not None:
-        sql += " WHERE s.event_id = ?"
-        params.append(event_id)
-    with closing(get_conn()) as conn:
-        return conn.execute(sql, params).fetchone()[0]
 
 
 def get_sponsor(sponsor_id: int) -> sqlite3.Row | None:

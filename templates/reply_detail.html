@@ -236,9 +236,9 @@
 </section>
 
 <div class="baris-aksi-kanan">
-  <a href="/tracker" role="button" class="secondary outline">All requests</a>
+  <a href="/tracker" role="button" class="secondary outline">Tracker</a>
   {% if balasan.request_id %}
-  <a href="/tracker/{{ balasan.request_id }}" role="button">Open the batch</a>
+  <a href="/tracker/batch/{{ balasan.request_id }}" role="button">Open the batch</a>
   {% endif %}
 </div>
 {% endblock %}

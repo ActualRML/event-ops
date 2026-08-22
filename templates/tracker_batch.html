@@ -6,7 +6,11 @@
   <h2>{{ permintaan.judul_acara }}</h2>
   <p class="chips">
     {# No vendor count here: the Total metric card below already carries it. #}
-    <span class="chip">Request <span class="chip-angka">#{{ request_id }}</span></span>
+    {# Category first: the tracker names a batch by its category now, so this
+       is what the row upstairs was called. The id stays beside it because it
+       is still what the URL and the SPK paths are keyed on. #}
+    <span class="chip"><span class="chip-angka">{{ permintaan.kategori }}</span></span>
+    <span class="chip">batch <span class="chip-angka">#{{ request_id }}</span></span>
     <span class="chip">event <span class="chip-angka">{{ permintaan.tanggal_acara | date or "no date" }}</span></span>
     <span class="chip">deadline <span class="chip-angka">{{ permintaan.deadline | date or "not set" }}</span></span>
     {# Label stays muted, value goes bold — same as the chip beside it. #}
@@ -19,16 +23,14 @@
 {% include "_progress.html" %}
 
 <div class="baris-aksi-kanan">
-  <a href="/tracker" role="button" class="secondary outline">All requests</a>
-  {# By event, not by batch: a second quote round for the same day reaches the
-     same running order.
-     The label carries the state, because the destination is the only place
-     that shows it: one link for an event that has a running order and one for
-     an event that does not, so "there isn't one yet" is visible from here
-     rather than only after clicking. #}
-  <a href="/events/{{ permintaan.event_id }}/rundown" role="button" class="secondary outline">
-    {% if rundown %}Rundown{% else %}Start rundown{% endif %}</a>
-  <form method="post" action="/tracker/{{ request_id }}/retry">
+  {# Back to the event, not to the top of the tracker: the batch list is one
+     level up now, and it is where the sibling rounds of this same job are. #}
+  <a href="/tracker/{{ permintaan.event_id }}" role="button" class="secondary outline">All batches</a>
+  {# No rundown button here. A rundown belongs to the EVENT, not to one of
+     its quote rounds, so it is offered on the event page one level up —
+     where "All batches" goes — and offering it from every batch of the same
+     event put the same link on the page three times over. #}
+  <form method="post" action="/tracker/batch/{{ request_id }}/retry">
     <button type="submit" {% if not p.failed and not p.draft %}disabled{% endif %}>
       Retry failed
     </button>

@@ -124,11 +124,13 @@ Language — the split is by audience, not by file:
     routes/          one APIRouter per area
       vendors.py     /, /vendors, /categories
       items.py       /items and its subpaths
-      sponsors.py    /sponsors and its subpaths
+      sponsors.py    /sponsors (the create form — no list), and every
+                     sponsor RECORD under /tracker/sponsors/{id}
       events.py      /events, /events/new, /events/{id}/edit — no detail page
       send.py        /send and its subpaths
-      tracker.py     /tracker, detail, retry
-      spk.py         /tracker/{request_id}/spk/{vendor_id} and download
+      tracker.py     /tracker (events), /tracker/{event_id} (that event's
+                     batches), /tracker/batch/{request_id} and its retry
+      spk.py         /tracker/batch/{request_id}/spk/{vendor_id} and download
       rundown.py     /events/{event_id}/rundown and its items
     templates/  static/  email_templates/  db/  docs/  README.md
 
@@ -201,20 +203,24 @@ main.py. It is in the header, the footer and the suffix of every page title,
 and it used to be typed out in all twenty-two of them — so renaming the app
 meant editing twenty-two files and missing one. Write `{{ merek }}`, never the
 name. Four pages carry no suffix at all and name their record instead
-(rundown.html, spk_form.html, sponsor_print.html, tracker_detail.html); that
+(rundown.html, spk_form.html, sponsor_print.html, tracker_batch.html); that
 predates the global and is left alone.
 
 Template filenames are English, and the shape says what the page is:
 
     {plural}.html            a list page      vendors.html, items.html,
-                                              sponsors.html, events.html,
-                                              tracker.html
+                                              events.html, tracker.html
     {singular}_form.html     a record form    vendor_form.html, item_form.html,
                                               sponsor_form.html, event_form.html,
                                               category_form.html, spk_form.html
-    {singular}_detail.html   one record       tracker_detail.html,
-                                              sponsor_detail.html,
+    {singular}_detail.html   one record       sponsor_detail.html,
                                               reply_detail.html
+
+The tracker is the one place the shapes do not reach, because it has TWO
+record levels and the convention has a slot for one. It names the record
+instead: tracker.html lists events, tracker_event.html is one event,
+tracker_batch.html is one batch. `_detail` would have to mean two different
+things here, so neither page uses it.
     {singular}_print.html    a printable      sponsor_print.html
     _{name}.html             a partial        _vendor_table.html, _progress.html,
                                               _vendor_stats.html, _send_pick_vendor.html,
@@ -305,10 +311,102 @@ and links out to /events/new. See invariant 16.
 
 Top-level pages, each with a drawer entry: Send (/send), Tracker
 (/tracker), Vendors (/vendors), Items (/items), Sponsors (/sponsors),
-Events (/events). Rundown and SPK have no entry of their own — both are
+Events (/events). Five of those six are lists; **Sponsors is a CREATE FORM**
+and has no list at all — see below. Rundown and SPK have no entry of their own — both are
 per-event or per-batch with no top-level list, and are reached from
 Tracker. The rundown does light Events in the trigger, since it lives
 under /events/{id}; that is the same parent-lighting `/categories` gets.
+
+The rundown is offered from the EVENT page only, not from each batch. It
+belongs to the event, so a link on every quote round of that event was the
+same destination repeated — three batches, three identical buttons. One
+level up, beside "All batches", is where it is reached.
+
+**The tracker is three levels, and the top one is EVENTS.** /tracker lists one
+row per event that has been quoted at least once, as COUNTS ONLY: the title,
+the date, how many batches and how many sponsors. It never names them — which
+categories went out and which sponsors are on the event are the event page's
+job. A list is for finding the row; the row's contents are one click in.
+/tracker/{event_id} opens that event and lists its batches and its sponsors.
+/tracker/batch/{request_id} is the per-vendor page — status, retry, SPK — and
+is where the work actually happens.
+
+DELIVERY IS NOT ON THE LIST, deliberately. It was, and the column now carries
+sponsors instead. Sent/failed/pending are per BATCH, so an event's summed
+tallies answer a question nobody asks — "6 of 11 sent" across three rounds
+names no round you can act on, and the Retry that would fix it lives one level
+in. The counts are exact where they mean something, on the event page and the
+batch page. The tracker list says what an event HAS; the pages inside say how
+it WENT.
+
+Batches are named by their CATEGORY, never by their id: a round is recognised
+by what it asked for (Tenda, Sound System), and a bare id says nothing to the
+person reading it. The id survives only in the URL and in one chip on the batch
+page, which is where it is still the key.
+
+/events is untouched by this and stays the place an event is created and
+CORRECTED. The split is by verb, not by noun: /events edits the event,
+/tracker reads what was sent for it. That is why there is still no event
+detail page under /events — the reading surface is the tracker's, and two
+pages describing one event is how they drift.
+
+An event with no batch appears NOWHERE on the tracker. The query joins
+requests rather than left-joining them, so creating an event on /events does
+not put an empty row here; the tracker is send history, and an event nothing
+was sent for has no history yet.
+
+The held-reply section stays a section on /tracker and is deliberately NOT
+folded into an event. A tier 4 carries no request_id at all, so it belongs to
+no batch and therefore to no event — grouping the list by event would give
+those rows nowhere to render, which is the exact failure invariant 18 exists
+to prevent. It sits beside the table rather than inside it, which is what let
+the table change shape without touching it.
+
+**Sponsors has NO LIST PAGE, and /sponsors is the create form.** There was a
+list and it is deleted. Do not rebuild it.
+
+The reason is in the schema rather than in taste. sponsors.event_id is NOT
+NULL and the table is UNIQUE(event_id, nama_pt), so a sponsor row belongs to
+exactly one event BY CONSTRUCTION — there is no sponsor master table and a
+company sponsoring two events is two rows, not one row seen twice. That is the
+opposite of vendors, which are a master list joined to categories many-to-many
+and genuinely span every event. So the page had to group by event to render at
+all, and a list that must group by its parent to make sense is that parent's
+list wearing a top-level entry.
+
+It lives on the parent now: /tracker/{event_id} renders the event's sponsors
+beside its batches, from db.list_sponsors(event_id=...) — the same query the
+old page called unfiltered. Reaching a sponsor is Tracker → the event → the
+sponsor, and sponsor_detail's back button goes to /tracker/{event_id} rather
+than to a list that no longer exists.
+
+**The sponsor RECORD lives under the tracker: /tracker/sponsors/{id}**, with
+its edit form, its printed sheet and all four package endpoints beneath it.
+Only three paths are left on /sponsors — the create form, `GET /sponsors/new`
+as a 307 alias for it, and the create POST.
+
+That split is the one /send and /tracker already have: a batch is created at
+/send and read at /tracker/batch/{id}. Sponsors now match — created at
+/sponsors, read at /tracker/sponsors/{id}. Create where the nav entry is, read
+where the event is.
+
+It also fixes the drawer with no code. The trigger label comes from
+`path.startswith(tujuan)` over the nav list, so while the record sat on
+/sponsors/{id} it lit **Sponsors** — a page that no longer lists sponsors and
+that the record is never reached from. The URL now says where the page
+belongs, /tracker/sponsors/1 starts with /tracker, and the highlight follows
+without a special case. Compare `/categories`, which needs an explicit line in
+base.html precisely because its URL does not say where it lives.
+
+`GET /sponsors/new` is kept for the same reason `GET /tracker/replies` is —
+without a handler the path used to fall through to /sponsors/{sponsor_id} and
+422 on int conversion. That parameterised route has moved away, so today it
+would 404 instead, but the redirect is the better answer to an old bookmark
+either way.
+
+Note this is NOT the same argument that deleted /tracker/replies. That page
+went because it was empty every time on a healthy mailbox. This one was never
+empty; it went because its rows belonged to a page that already existed.
 
 Replies get no entry either, and no LIST PAGE at all. There was a
 /tracker/replies once and it is deleted: /tracker already carried the check
@@ -324,7 +422,7 @@ the second inbox this feature exists not to be. What survives under
 /tracker/replies/ is the DETAIL page, where a reply is assigned and approved,
 plus the check POST and the attachment route. `GET /tracker/replies` is a bare
 307 to /tracker, kept only because without a handler the path falls through to
-/tracker/{request_id} and 422s on int conversion, which is a worse answer to an
+/tracker/{event_id} and 422s on int conversion, which is a worse answer to an
 old bookmark than a redirect.
 
 The drawer trigger carries a count of incoming mail not yet dealt with:
@@ -346,9 +444,18 @@ main.py: a callable, because base.html renders on every page and a value read
 at startup would be stale on the second load.
 
 **routes/replies.py must be included BEFORE routes/tracker.py.** Tracker owns
-/tracker/{request_id}, which matches any single segment, so "replies" would be
-captured as a request_id and 422 on int conversion — a path parameter that
+/tracker/{event_id}, which matches any single segment, so "replies" would be
+captured as an event_id and 422 on int conversion — a path parameter that
 fails validation does not fall through to the next route.
+
+The batch pages carry a literal `batch` segment for the same class of reason,
+though not the same mechanism: /tracker/batch/{request_id} has three segments
+and /tracker/{event_id} has two, so those two cannot collide and their include
+order is free. What the segment buys is that the meaning of /tracker/{id} was
+ALLOWED to change. Event ids and request ids are both ints in overlapping
+ranges, so leaving the batch page on /tracker/{id} would have made every old
+bookmark render a different record with no error to say so. A 404 is a
+truthful answer to a stale link; a wrong page is not.
 
 ## Schema
 
@@ -744,7 +851,7 @@ shape of guarantee the sponsor print route has about cost.
     The gate lives in routes/spk.py's muat_spk, which the form, the save and
     the download all pass through, so the three cannot drift; hiding the table
     button is the courtesy and the 403 is the guarantee. `boleh_spk` must be in
-    BOTH contexts that render _progress.html — tracker_detail and
+    BOTH contexts that render _progress.html — tracker_batch and
     send_progress — or the poll's last swap reopens every button.
 15. Money on a sold line never moves. sponsor_item.cost and .value are
     copied from the catalog when the line is created and are never read
@@ -929,8 +1036,9 @@ replied, `#78848f` draft/inactive.
   `max-width: min(1200px, calc(100% - 48px))`, centred, so the gutter to
   the viewport is 24px each side and never collapses on narrow screens.
 - Panel border `1px solid #e4e7eb`, radius **10px**, padding
-  `14px 24px 32px`, margin-block `10px 12px` (10px of grey above,
-  12px below to the footer).
+  `15px 24px 32px`, margin-block `10px 12px` (10px of grey above,
+  12px below to the footer). The top 15px is the same 15px the title gives
+  its chips, so the space above the heading matches the space below it.
 - Shadow, deliberately barely visible:
   `0 1px 2px rgba(16,24,40,.04), 0 2px 6px rgba(16,24,40,.03)`.
 - 24px is the horizontal gutter everywhere — panel, header nav, footer
@@ -990,9 +1098,19 @@ class of our own for active state.
                      6px padding, #fff on 1px #e4e7eb, radius 8px
     li[role=separator]  height 0, margin 6px 4px, border-top 1px #eef0f3
 
-Entries live in one `{% set %}` list in base.html, two groups: what you do
-(Send RFQ, Tracker), then what you maintain (Vendors, Items, Sponsors,
-Events). The separator is the gap between the groups, not an entry. The trigger label
+Entries live in one `{% set %}` list in base.html, two groups, and the split
+is per-event WORK above, master DATA below.
+
+The first group is the order the work happens in: Events, Send RFQ, Sponsors,
+Tracker. The three creates come first — an event exists before anything can be
+quoted for it or sold against it — and Tracker is last because it is
+DOWNSTREAM OF ALL THREE: /tracker/{event_id} renders that event's batches and
+its sponsors on one screen, so it is where everything made above shows up
+again. Order the group by what makes a record, then what reads them back.
+
+The second group is Vendors and Items, the two master tables. They are not
+steps in doing one event; they are data you maintain between events, which is
+what the separator now means. The separator is the gap between the groups, not an entry. The trigger label
 and the marked entry both derive from that list, so they cannot disagree.
 `/categories` has no entry and lights Vendors, since it is reached from
 there and returns there.
@@ -1024,20 +1142,30 @@ own — read the CDN file directly when chasing an override.
 Two shapes, chosen by whether the page has a context line:
 
 - **With chips** — plain `<hgroup>`: h2 (30px/1.25, `-.02em`)
-  → 4px → `.chips` → **20px** to whatever follows. Every list page and
+  → 15px → `.chips` → **24px** to whatever follows. Every list page and
   every record-detail page.
 - **Title only** — `<hgroup class="judul-rapat">`: h2 margin-bottom 0,
   hgroup margin-bottom **16px**. Every form page, and the Send flow.
 
-The 16px/20px split is a rule, not drift: it tracks whether the page has
+The 16px/24px split is a rule, not drift: it tracks whether the page has
 a context line. Chips carry their own visual mass, so the block below
-them needs the extra 4px to sit clear. Pick the shape by whether the
+them needs the extra room to sit clear. Pick the shape by whether the
 page has chips, and the spacing follows — do not list pages here, read the
 template.
 
+The two chip-page numbers were 4px and 20px. 4px let the chips sit right
+under the 30px title, so the row of pills read as part of the heading rather
+than as a line under it; 15px separates them and 24px below keeps the gap
+under the chips larger than the gap above them, which is what makes the block
+read as title-then-context instead of one lump. Both come off the spacing
+scale. **Only chip pages moved.** `.judul-rapat h2` pins its own
+margin-bottom to 0 and `.judul-rapat` its own 16px, and a class outranks the
+`main h2` / `main hgroup` element pairs, so every title-only page renders
+exactly as before — verified on /send.
+
 One page does not follow it. `spk_form.html` carries `.judul-rapat` in both
 states and adds its chips inside that hgroup when editing, so an SPK being
-edited shows a context line with 16px under it instead of 20px. Known, not
+edited shows a context line with 16px under it instead of 24px. Known, not
 yet fixed; fixing it is a visual change, so it needs its own pass.
 
 Chips are the only context-line form in use — no prose subtitles exist,
@@ -1082,9 +1210,17 @@ it plus one of `.form-vendor` (record forms) or `.form-kirim` (Send).
 - Checkbox rows are not field groups: `.kotak-kategori` is a wrapping
   flex row, 6px/16px gap, 13px labels at weight 400.
 
-Sections (`main section > h3`) group fields on Send and preview: 13px/600,
+Sections (`main section > h3`) group fields on Send and preview and label
+the tables on tracker event and reply detail: **18px/600**,
 `border-top: 1px #eef0f3`, padding-top 16px, margin-bottom 12px. The rule
 is the section divider — no nested panels anywhere in the app.
+
+It was 13px, which put the heading BELOW the size of everything it labelled —
+under 14px form controls on Send, under 18px table text on the tracker event
+page — so it read as a caption rather than a heading. 18px is one rule for all
+eight templates that use it; there is deliberately no second heading class,
+because two section styles is the exact drift the audit below exists to
+undo.
 
 `main section:first-of-type > h3` drops both the border and the
 padding-top: the first section on a page has nothing above it to divide
@@ -1124,7 +1260,16 @@ Row containers — which pages use which drifts; grep templates/:
   explicit height is load-bearing: Pico gives input and `[role=button]` a
   height derived from 1rem while select and button stay content-sized, so
   the row stair-steps without it.
-- `.aksi-grup` — in-table actions, right-aligned, .25rem gap, children
+- `.kolom-spk` is the one exception to the right-alignment above: the SPK
+column carries a value (a nomor, or an em-dash meaning none) as often as it
+carries buttons, and its header is left-aligned like every other, so a
+right-aligned em-dash under it read as belonging to nothing. It adds
+`text-align: left` and nothing else — the buttons already start at the cell's
+left edge, because `.aksi-grup` children take `flex: 1 1 0` and fill the cell
+rather than sitting at one end of it. Releasing that basis would size Edit and
+Download to their own labels and lose the equal-width pair.
+
+`.aksi-grup` — in-table actions, right-aligned, .25rem gap, children
   `flex: 1 1 0; max-width: 6rem` so a pair measures equal down the column.
   A lone button fills to that 6rem cap rather than shrinking to its label —
   that is the established look, and `.btn-spk` lifts the cap when it needs
@@ -1166,7 +1311,7 @@ control that removes a line.
 
 ### Pagination
 
-Every list page is paged — /vendors, /items, /sponsors, /events, /tracker —
+Every list page is paged — /vendors, /items, /events, /tracker —
 through one mechanism, and there is no second one.
 
 `deps.parse_halaman(per, page, total)` takes the two query params and a count
@@ -1215,16 +1360,59 @@ value it renders. grep templates/ for `<colgroup` to read the current set —
 this file does not list them, because a list of nine tables is wrong the
 first time a column is added to any one of them.
 
-Cells `.35rem .6rem` (7px/12px), `vertical-align: middle`,
+A `#` header is not used anywhere. Three tables number their rows and all say
+`No.` — the rundown's `urutan`, the tracker event page's `batch_ke` (round 1,
+round 2), and its sponsor rows by `loop.index`. The tracker LIST had one too and
+it was deleted rather than relabelled: that column held `events.id`, a
+database key that names nothing a person here works with, appears in no URL
+anyone types, and counted DOWN the page because the list is newest-first —
+which reads as a broken sort. Before labelling a number column, check whether
+it is a POSITION or a KEY; only the first is a `No.`, and a key on a list page
+usually should not be shown at all.
+
+Cells `12px 12px`, `vertical-align: middle`,
 `overflow-wrap: break-word`. First and last columns zero their outer
 padding so the table's edges line up with the heading above and the
 button beside it. Header row: 14.4px uppercase, `.04em` tracking, muted,
 nowrap, `border-bottom: 3px` (Pico's thead default) against 1px on body
 rows, both `#e7eaf0`.
 
+The vertical padding was `.35rem` (7px) and is now 12px. 7px against 18px body
+text is 39% of the text height, which reads as cramped — a row of one-line
+cells looked like a rule with words on it rather than a row. 12px is about
+two-thirds of the text height, which is the ordinary proportion. It costs
+roughly 5px per row, so a 25-row page gets ~125px taller; that was weighed and
+accepted, because the pages that are long are long either way and the ones
+that are short are the ones that looked thin.
+
 Secondary text: `.redup` (muted, .85em) for PIC, email, timestamps.
 `.sel-teks` clips single-token values to one line with the full value on
-`title`. `.angka` right-aligns with tabular numerals.
+`title`. Numbers have THREE alignment classes and no fourth: `.angka`
+right, `.angka-kiri` left, `.nomor` centred. All three carry tabular numerals;
+they differ only in `text-align`, so the choice is about how the column is
+read, never about the digits.
+
+`.nomor` is the CENTRED number column: tabular numerals, applied to the
+`<th>` and the `<td>` together so the header sits over its values. It is
+deliberately not `.angka`: a short number shoved to one side of a narrow
+column reads as if it belongs to the neighbouring cell. Four columns use it —
+the rundown's `urutan`, the tracker event page's `batch_ke`, that page's
+sponsor rows (numbered by `loop.index`, since sponsors have no position of
+their own and the query orders them alphabetically inside the event), and the
+sponsor package's Qty header.
+
+`.angka-kiri` is for tables that read OUTWARD FROM A NAME rather than
+lining their digits up on the column edge — the sponsor package and the event
+page's sponsor list. It started as a rule scoped to `.tabel-paket` and became
+a class the moment a second table wanted it: a per-table override is one
+override, but two of them is a pattern, and the third would have been a third
+rule. Reach for the class.
+
+Qty on the package table is an exception twice over: a stepper is a control
+rather than a value, so `.tabel-paket .kendali-qty` centres it — the one
+remaining table-scoped rule, because it aligns a flex row rather than text —
+and the header carries `.nomor` so the two agree. The printed sponsor sheet
+builds its own table and is untouched by any of this.
 
 Badges — 15px, radius 999px, `.15rem .55rem`, white text, nowrap,
 ellipsised, one class per status keyed off the raw DB value:
@@ -1325,7 +1513,7 @@ there is no second copy to drift. One element carries both audiences:
 `.layar` shows on screen, `.cetak` in print, and `@media print` swaps the
 pair.
 
-**The sponsor sheet has its own route**, `/sponsors/{sponsor_id}/cetak` →
+**The sponsor sheet has its own route**, `/tracker/sponsors/{id}/print` →
 `sponsor_print.html`, because the two versions are not the same document.
 The screen page is a staff worksheet showing cost; the sheet is what a
 sponsor reads. So the sheet carries no `.layar`/`.cetak` pairs — it is
@@ -1333,7 +1521,10 @@ Indonesian throughout — and its route hands the template a context with no
 cost in it at all. **That is the guarantee: the forbidden numbers cannot
 print because they are never passed.** Do not "simplify" it into rendering
 the detail row objects. Its two buttons stay English, since staff open the
-URL and print hides them anyway.
+URL and print hides them anyway, and the path says `print` rather than `cetak`
+for the same reason every route and template filename is English: a URL is not
+read by the sponsor. The `.cetak` / `.layar` CLASS names are untouched — those
+follow the Indonesian class convention and are not renamed piecemeal.
 
 The shared `@media print` block at the end of `base.html` hides everything
 that is not the document: nav, footer, editing forms (picked by
@@ -1365,7 +1556,8 @@ print block so a later colour on either cannot quietly print grey, and
 rule is the only thing separating a total from the rows it adds up.
 
 What carries no `.layar`/`.cetak` pair, because it reads the same either
-way: `#`, `PIC`, clock times, the venue name, and the item text itself,
+way: `No.` (the abbreviation is the same in both languages), `PIC`, clock
+times, the venue name, and the item text itself,
 which procurement already types in Indonesian. Indonesian has no plural
 inflection, so the `.cetak` half never needs the `"s" if n != 1` suffix
 its English twin carries.
@@ -1391,17 +1583,23 @@ If a selector can win on specificity or source order, it must.
 
 ### Spacing scale actually in use
 
-`2 · 4 · 6 · 8 · 10 · 12 · 14 · 16 · 20 · 24 · 30 · 32`
+`2 · 4 · 6 · 8 · 10 · 12 · 14 · 15 · 16 · 20 · 24 · 30 · 32`
 
-The recurring ones and what they mean: **4px** label→control and
-h2→chips · **8px** every action-row and chip gap, vendor-row padding ·
+15 is the one value here that is not a multiple of 2 from its neighbours.
+It is the title's own spacing and nothing else — panel top→h2 and h2→chips,
+deliberately the same number so the heading sits evenly between the panel
+edge above it and its context line below. Chosen by eye against the 30px
+title rather than off the scale; do not reach for it for anything new.
+
+The recurring ones and what they mean: **4px** label→control · **8px**
+every action-row and chip gap, vendor-row padding · **15px** panel top→h2 and h2→chips ·
 **12px** field→field on record forms, section h3→content, footer
-padding, panel→footer · **16px** field→field on Send, section rule→
-heading, title-only block→content, controls row→table · **20px** grid
-column gap, title+chips block→content, action row top margin, metric
-gap, `<article>` padding · **24px** the horizontal gutter, everywhere ·
-**30px** metric cards→status line, empty-state padding-block · **32px**
-panel bottom padding.
+padding, panel→footer, table cell padding · **16px** field→field on Send,
+section rule→heading, title-only block→content, controls row→table ·
+**20px** grid column gap, action row top margin, metric gap,
+`<article>` padding · **24px** the horizontal gutter everywhere, and
+title+chips block→content · **30px** metric cards→status line,
+empty-state padding-block · **32px** panel bottom padding.
 
 Radii in play, after the audit fixes:
 

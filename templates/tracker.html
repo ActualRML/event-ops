@@ -5,7 +5,7 @@
 <hgroup>
   <h2>Tracker</h2>
   <p class="chips">
-    <span class="chip"><span class="chip-angka">{{ hal.total }}</span> send request{{ "s" if hal.total != 1 }}</span>
+    <span class="chip"><span class="chip-angka">{{ hal.total }}</span> event{{ "s" if hal.total != 1 }} quoted</span>
     <span class="chip">newest first</span>
     {# Never a bare zero. Before the first successful check there is no result
        to report, and saying so is the difference between "nobody replied" and
@@ -35,75 +35,71 @@
   </div>
 </div>
 
-{# Newest first comes from db.list_requests() (ORDER BY r.id DESC); nothing is
+{# One row per EVENT. Newest first comes from db.list_tracker_events()
+   (ORDER BY MAX(r.id) DESC — the event's most recent batch); nothing is
    re-sorted here. #}
 <table class="tabel">
-  {# Pengiriman takes only what its widest row needs ("6/8 terkirim" plus the
-     gagal badge, ~181px). The 6% freed goes to the title, which is the column
-     that actually runs out of room. #}
+  {# Every cell is one line — a title, a date and two counts — so the two
+     count columns need only their header's width and the room goes to the
+     event title, which is the one thing that can run long.
+
+     No id column. It held events.id, which names nothing a person here works
+     with, appears in no URL anyone types, and descended 2, 1 down the page
+     because it is an id and the list is newest-first — which reads as a
+     broken sort. The id is still what the Details link carries. #}
   <colgroup>
-    <col style="width: 6%">
-    <col style="width: 32%">
-    <col style="width: 16%">
-    <col style="width: 18%">
-    <col style="width: 18%">
+    <col style="width: 34%">
+    <col style="width: 22%">
+    <col style="width: 17%">
+    <col style="width: 17%">
     <col style="width: 10%">
   </colgroup>
   <thead>
     <tr>
-      <th>#</th>
       <th>Event</th>
       <th>Event date</th>
-      <th>Created</th>
-      <th>Delivery</th>
+      <th>Batches</th>
+      <th>Sponsors</th>
       <th></th>
     </tr>
   </thead>
   <tbody>
-    {% for r in requests %}
+    {% for e in events %}
     <tr>
-      <td class="angka">{{ r.id }}</td>
-      {# Event name, then a quiet marker only when the event was quoted more
-         than once — enough to explain two rows sharing a title, without
-         turning the list into a grouped tree. #}
-      {# Event name, then the batch's own category — which is what tells
-         several batches under one event apart at a glance. The batch counter
-         rides along only when the event was quoted more than once. #}
+      <td><strong>{{ e.judul_acara }}</strong></td>
+      <td>{{ e.tanggal_acara | date or "—" }}</td>
+      {# Counts only, both columns. Which categories went out and which
+         sponsors are on the event are named on the event page; here they
+         would be three lines of grey under every row. #}
+      <td>{{ e.batches }} batch{{ "es" if e.batches != 1 }}</td>
       <td>
-        <strong>{{ r.judul_acara }}</strong>
-        <div class="redup">{{ r.kategori }}{% if r.event_batches > 1 %} · batch {{ r.batch_ke }} of {{ r.event_batches }}{% endif %}</div>
-      </td>
-      <td>{{ r.tanggal_acara | date or "—" }}</td>
-      <td class="redup">{{ r.created_at | datetime }}</td>
-      {# Count and badges are one statement about one batch, so they share a
-         cell. Flex rather than inline flow: an inline-block badge sits on the
-         text baseline, which leaves it ~8px above the words next to it. #}
-      <td>
-        <div class="kirim-ringkas">
-          <span>{{ r.sent }}/{{ r.total }} sent</span>
-          {% if r.failed %}<span class="badge badge-gagal">{{ r.failed }} failed</span>{% endif %}
-          {% if r.draft %}<span class="badge badge-draft">{{ r.draft }} pending</span>{% endif %}
-        </div>
+        {%- if e.sponsors %}{{ e.sponsors }} sponsor{{ "s" if e.sponsors != 1 }}
+        {%- else %}<span class="redup">—</span>{% endif -%}
       </td>
       <td class="aksi">
         {# Same grup wrapper as the vendor table, so the button measures the
            same 5rem here as it does there. #}
         <div class="aksi-grup">
-          <a href="/tracker/{{ r.id }}" role="button"
+          <a href="/tracker/{{ e.id }}" role="button"
              class="secondary outline btn-mini">Details</a>
         </div>
       </td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="6" class="kosong">
-        No send requests yet. Create the first one from the Send page — every
-        batch shows up here with its per-vendor status.
+      <td colspan="5" class="kosong">
+        Nothing has been sent yet. Create the first batch from the Send page —
+        every event you quote shows up here with its rounds and their status.
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+
+{# The pager belongs to the table above it. It used to sit inside the held-
+   replies section, which meant it rendered only when a reply happened to be
+   unassigned and paged a table it was not under. #}
+{% include "_pagination.html" %}
 
 {% if perlu_assign %}
 {# Replies the ladder could not fully place. There is no page of their own any
@@ -169,8 +165,6 @@
       {% endfor %}
     </tbody>
   </table>
-
-{% include "_pagination.html" %}
 </section>
 {% endif %}
 {% endblock %}

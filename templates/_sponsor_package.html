@@ -22,11 +22,11 @@
   <thead>
     <tr>
       <th>Item</th>
-      <th class="angka">Qty</th>
-      <th class="angka">Cost</th>
-      <th class="angka">Value</th>
-      <th class="angka">Line cost</th>
-      <th class="angka">Line value</th>
+      <th class="nomor">Qty</th>
+      <th class="angka-kiri">Cost</th>
+      <th class="angka-kiri">Value</th>
+      <th class="angka-kiri">Line cost</th>
+      <th class="angka-kiri">Line value</th>
       <th></th>
     </tr>
   </thead>
@@ -44,14 +44,14 @@
            form. change bubbles from the input, which is why the form can
            listen for it without naming the input. #}
         <form class="kendali-qty" method="post"
-              action="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty-exact"
-              hx-post="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty-exact"
+              action="/tracker/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty-exact"
+              hx-post="/tracker/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty-exact"
               hx-target="#tabel-paket" hx-swap="outerHTML"
               hx-trigger="submit, change">
           {# Disabled at 1. Decrementing off the bottom is a no-op in SQL as
              well — this button must never be the thing that removes a line. #}
           <button type="button" class="secondary outline btn-qty"
-                  hx-post="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty"
+                  hx-post="/tracker/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty"
                   hx-vals='{"delta": "-1"}'
                   hx-target="#tabel-paket" hx-swap="outerHTML"
                   aria-label="One fewer {{ b.nama }}"
@@ -63,7 +63,7 @@
                  inputmode="numeric" autocomplete="off"
                  aria-label="Quantity of {{ b.nama }}">
           <button type="button" class="secondary outline btn-qty"
-                  hx-post="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty"
+                  hx-post="/tracker/sponsors/{{ sponsor.id }}/items/{{ b.id }}/qty"
                   hx-vals='{"delta": "1"}'
                   hx-target="#tabel-paket" hx-swap="outerHTML"
                   aria-label="One more {{ b.nama }}">+</button>
@@ -72,13 +72,13 @@
       {# The snapshot, not today's catalog price. Editing the item in /items
          leaves these two columns exactly as they are, and so does moving the
          quantity beside them. #}
-      <td class="angka redup">{{ b.cost | rupiah }}</td>
-      <td class="angka redup">{{ b.value | rupiah }}</td>
-      <td class="angka">{{ (b.qty * b.cost) | rupiah }}</td>
-      <td class="angka">{{ (b.qty * b.value) | rupiah }}</td>
+      <td class="angka-kiri redup">{{ b.cost | rupiah }}</td>
+      <td class="angka-kiri redup">{{ b.value | rupiah }}</td>
+      <td class="angka-kiri">{{ (b.qty * b.cost) | rupiah }}</td>
+      <td class="angka-kiri">{{ (b.qty * b.value) | rupiah }}</td>
       <td class="aksi">
         <div class="aksi-grup">
-          <form method="post" action="/sponsors/{{ sponsor.id }}/items/{{ b.id }}/hapus">
+          <form method="post" action="/tracker/sponsors/{{ sponsor.id }}/items/{{ b.id }}/hapus">
             <button type="submit" class="outline btn-mini btn-mati">Remove</button>
           </form>
         </div>
@@ -99,8 +99,8 @@
   <tfoot>
     <tr>
       <td colspan="4">Total</td>
-      <td class="angka">{{ r.cost_pakai | rupiah }}</td>
-      <td class="angka">{{ r.value_total | rupiah }}</td>
+      <td class="angka-kiri">{{ r.cost_pakai | rupiah }}</td>
+      <td class="angka-kiri">{{ r.value_total | rupiah }}</td>
       <td></td>
     </tr>
   </tfoot>
