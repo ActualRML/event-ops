@@ -133,16 +133,15 @@ def hitung_baris(db_path: Path):
 def tolak(db_path: Path) -> int:
     """The refusal: what is in the file, and how to keep it. Returns the exit
     code so the caller reads as one line."""
-    cadangan = db_path.with_name(
-        f"{db_path.stem}-backup-{datetime.now():%Y%m%d-%H%M%S}{db_path.suffix}"
-    )
+    cap = f"{datetime.now():%Y%m%d-%H%M%S}"
+    cadangan = db_path.with_name(f"{db_path.stem}-backup-{cap}{db_path.suffix}")
 
     print(f"refusing: {db_path} already exists, and rebuilding deletes it.",
           file=sys.stderr)
 
     baris = hitung_baris(db_path)
     if baris is None:
-        print("  it could not be opened to count rows — back it up anyway.",
+        print("  it could not be opened to count rows - back it up anyway.",
               file=sys.stderr)
     else:
         print("\n  rows that would be destroyed:", file=sys.stderr)
@@ -165,7 +164,7 @@ def tolak(db_path: Path) -> int:
     sumber = db_path.as_posix()
     tujuan = cadangan.as_posix()
 
-    print("\n  back it up first:", file=sys.stderr)
+    print("\n  back it up first - the DATABASE:", file=sys.stderr)
     print(
         f"    python -c \"import sqlite3; c=sqlite3.connect('file:{sumber}?mode=ro',"
         f" uri=True); c.execute(\\\"VACUUM INTO '{tujuan}'\\\"); c.close()\"",
@@ -173,6 +172,32 @@ def tolak(db_path: Path) -> int:
     )
     print(f"    or, with the sqlite3 CLI:  sqlite3 {sumber} \"VACUUM INTO '{tujuan}'\"",
           file=sys.stderr)
+    # And the half that command cannot reach. Attachment BYTES live on the
+    # filesystem, so a VACUUM INTO restores every inbox_attachment row with
+    # its filename, size and content type and not one byte of any file: the
+    # rows look intact and every download 404s. That is the worst shape a
+    # backup can fail in, and the count printed above NAMES those rows, so
+    # saying nothing here would be actively misleading.
+    #
+    # Printed only when there is something to copy — an install that has
+    # never received a reply should not be told to back up an empty folder.
+    lampiran = Path(config.ATTACHMENT_DIR)
+    berkas = sorted(lampiran.glob("*")) if lampiran.is_dir() else []
+    if berkas:
+        salinan = lampiran.with_name(f"{lampiran.name}-backup-{cap}")
+        jamak = "s" if len(berkas) != 1 else ""
+        print(file=sys.stderr)
+        print(f"  and the ATTACHMENTS - {len(berkas)} file{jamak} the database"
+              " does not hold:", file=sys.stderr)
+        # copytree rather than a shell copy, for the same reason the python
+        # one-liner is offered first above: it is the one that works on every
+        # platform this runs on.
+        print(f'    python -c "import shutil; shutil.copytree('
+              f"'{lampiran.as_posix()}', '{salinan.as_posix()}')\"",
+              file=sys.stderr)
+        print("    (a rebuild does NOT delete these. They are listed because"
+              " the database alone is not a backup.)", file=sys.stderr)
+
     print("\n  then re-run, or pass --force to delete it now.", file=sys.stderr)
     return 1
 
